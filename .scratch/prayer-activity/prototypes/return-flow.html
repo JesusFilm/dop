@@ -1,0 +1,215 @@
+<!doctype html>
+<!--
+  PROTOTYPE — THROWAWAY. Return & connection flow for the QR prayer-request matcher (issue #6).
+  Question: what does a returning person see, and how do pray-er / pray-ee connect?
+  3 radically different variants (?variant=A|B|C), each showing 4 states (?state=before|after|trio|nocookie).
+  No backend, no persistence — mock data only. Open this file directly in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Return flow prototype — prayer matcher</title>
+<style>
+  :root{
+    --ink:#2b2622; --soft:#6f665e; --faint:#a99e93;
+    --paper:#f7f2ea; --card:#fffdf9; --line:#e7ddcf;
+    --accent:#7d6a52; --accent-ink:#5a4a37; --warm:#c98a4b;
+    --glow:#f0e4d0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(120% 90% at 50% -10%, #fbf7f0 0%, var(--paper) 55%, #efe7db 100%);
+    color:var(--ink); min-height:100vh; -webkit-font-smoothing:antialiased;
+  }
+  .phone{
+    max-width:400px; margin:0 auto; min-height:100vh; padding:28px 22px 120px;
+    display:flex; flex-direction:column;
+  }
+  .brand{font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); text-align:center; margin-bottom:4px}
+  .serif{font-family:Georgia,"Times New Roman",serif}
+  .req{font-family:Georgia,"Times New Roman",serif; font-size:19px; line-height:1.55; color:var(--accent-ink)}
+  .muted{color:var(--soft)}
+  .center{text-align:center}
+  h1{font-size:26px; margin:.2em 0}
+  .btn{display:inline-block; border:none; border-radius:999px; padding:13px 22px; font-size:15px; font-weight:600; cursor:pointer}
+  .btn-primary{background:var(--accent); color:#fff}
+  .btn-ghost{background:transparent; color:var(--accent-ink); border:1px solid var(--line)}
+  .name{font-weight:700}
+  .fadein{animation:fade .5s ease both}
+  @keyframes fade{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
+
+  /* ---- variant A: single card ---- */
+  .a-card{background:var(--card); border:1px solid var(--line); border-radius:22px; padding:30px 26px; box-shadow:0 12px 40px rgba(90,74,55,.08); margin-top:auto; margin-bottom:auto}
+  .a-count{font-size:44px; font-weight:800; letter-spacing:.02em; color:var(--accent-ink); font-variant-numeric:tabular-nums}
+  .a-quote{border-left:3px solid var(--glow); padding-left:16px; margin:18px 0}
+  .a-partner{display:inline-flex; align-items:center; gap:9px; background:var(--glow); color:var(--accent-ink); padding:7px 14px; border-radius:999px; font-weight:700; font-size:15px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--warm);display:inline-block}
+
+  /* ---- variant B: guided steps ---- */
+  .b-status{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; display:flex; gap:12px; align-items:center; margin-bottom:14px}
+  .b-pill{width:38px;height:38px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto}
+  .b-step{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 18px; margin-bottom:12px; position:relative}
+  .b-num{position:absolute; top:-11px; left:16px; width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .b-check{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
+  .b-check:last-child{border-bottom:none}
+  .b-box{width:22px;height:22px;border-radius:6px;border:2px solid var(--faint);flex:0 0 auto}
+
+  /* ---- variant C: envelope / letter ---- */
+  .c-env{margin:auto 0; text-align:center}
+  .c-seal{width:120px;height:120px;border-radius:50%;background:linear-gradient(160deg,#e9d8bd,#d8c19b);margin:0 auto 22px;display:flex;align-items:center;justify-content:center;font-size:46px;box-shadow:inset 0 -6px 16px rgba(120,90,50,.18), 0 10px 30px rgba(120,90,50,.12)}
+  .c-letter{background:#fffef9;border:1px solid var(--line);border-radius:6px;padding:30px 26px;text-align:left;box-shadow:0 14px 44px rgba(90,74,55,.12);position:relative}
+  .c-letter:before{content:"";position:absolute;inset:8px;border:1px solid #efe6d6;border-radius:3px;pointer-events:none}
+  .c-hand{font-family:"Segoe Script","Bradley Hand",cursive; font-size:22px; color:var(--warm)}
+  .c-from{font-family:"Segoe Script","Bradley Hand",cursive; font-size:20px; color:var(--accent-ink); text-align:right; margin-top:20px}
+
+  /* ---- switchers ---- */
+  .bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;background:#2b2622;color:#fff;border-radius:999px;padding:7px 8px;box-shadow:0 8px 30px rgba(0,0,0,.3);z-index:99;font-size:13px}
+  .bar button{background:#453d34;color:#fff;border:none;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer}
+  .bar .lab{padding:0 8px;min-width:118px;text-align:center;font-weight:600}
+  .states{position:fixed;left:50%;top:12px;transform:translateX(-50%);display:flex;gap:6px;z-index:99}
+  .states a{font-size:11px;text-decoration:none;color:var(--soft);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+  .states a.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .privacy{font-size:12px;color:var(--faint);text-align:center;margin-top:14px;line-height:1.5}
+  .nocookie{background:#fff4e6;border:1px solid #f0d9b6;border-radius:14px;padding:18px;margin:auto 0}
+</style>
+</head>
+<body>
+<div class="states" id="states"></div>
+<div class="phone" id="app"></div>
+<div class="bar">
+  <button id="prev">←</button>
+  <div class="lab" id="lab">A</div>
+  <button id="next">→</button>
+</div>
+
+<script>
+// ---------- mock data ----------
+const YOU = "Ana";
+const PAIR = { name:"Rewi", request:"My mum starts chemo this week. I'm scared for her and trying to hold it together for my younger brothers. Pray for peace in our home." };
+const TRIO = [
+  { name:"Rewi", request:"My mum starts chemo this week. Pray for peace in our home." },
+  { name:"Sina", request:"I've been carrying a decision about a job move for months and can't find clarity. Pray I'd hear God in it." },
+];
+const RESET_AT = "11:00"; // reveal moment
+
+// ---------- variants ----------
+function variantA(state){
+  if(state==='nocookie') return nocookieBlock('a-card');
+  if(state==='before'){
+    return `<div class="brand">Day of Prayer</div>
+    <div class="a-card center fadein">
+      <p class="muted">You're all set, ${YOU}.</p>
+      <div class="a-count">10:32</div>
+      <p class="muted">Come back at <b>${RESET_AT}</b> to meet the person you'll pray with today.</p>
+      <p class="privacy">One other person will receive your request too, and will come find you.</p>
+    </div>`;
+  }
+  const people = state==='trio' ? TRIO : [PAIR];
+  const who = people.map(p=>p.name).join(" & ");
+  return `<div class="brand">Day of Prayer</div>
+  <div class="a-card fadein">
+    <p class="center muted">Today you're praying with</p>
+    <p class="center" style="margin:6px 0 18px"><span class="a-partner"><span class="dot"></span>${who}</span></p>
+    ${people.map(p=>`
+      <div class="a-quote">
+        <div class="req">"${p.request}"</div>
+        <p class="muted" style="margin:.5em 0 0;font-size:14px">— ${p.name}</p>
+      </div>`).join("")}
+    <p class="center muted" style="margin-top:20px">Find ${who} in the room, and pray together.</p>
+    <p class="privacy">Only you${state==='trio'?' three':' two'} can see ${state==='trio'?'these requests':'this request'}.</p>
+  </div>`;
+}
+
+function variantB(state){
+  if(state==='nocookie') return nocookieBlock('');
+  if(state==='before'){
+    return `<div class="brand">Day of Prayer</div>
+    <div class="b-status fadein"><div class="b-pill">✓</div><div><b>Your request is in.</b><div class="muted" style="font-size:13px">Submitted 9:14am · locked at ${RESET_AT}</div></div></div>
+    <div class="b-step fadein"><div class="b-num">1</div><b>At ${RESET_AT}</b><p class="muted" style="margin:.4em 0 0">You'll be paired with one other person here. Come back to this page.</p></div>
+    <div class="b-step fadein"><div class="b-num">2</div><b>Find them & pray together</b><p class="muted" style="margin:.4em 0 0">You'll see their name and what they asked prayer for.</p></div>
+    <p class="privacy">Only your partner will see your request. It's deleted tomorrow.</p>`;
+  }
+  const people = state==='trio' ? TRIO : [PAIR];
+  const who = people.map(p=>p.name).join(" & ");
+  return `<div class="brand">Day of Prayer</div>
+  <div class="b-status fadein"><div class="b-pill">🙏</div><div><b>You're paired with ${who}</b><div class="muted" style="font-size:13px">Go find ${state==='trio'?'them':'them'} in the room</div></div></div>
+  ${people.map((p,i)=>`
+    <div class="b-step fadein"><div class="b-num">${i+1}</div>
+      <b>${p.name} asked prayer for</b>
+      <div class="req" style="margin-top:8px">"${p.request}"</div>
+    </div>`).join("")}
+  <div class="b-step fadein">
+    <b>When you've met & prayed</b>
+    <div class="b-check"><div class="b-box"></div><span>We found each other</span></div>
+    <div class="b-check"><div class="b-box"></div><span>We prayed together</span></div>
+    <p class="privacy" style="text-align:left;margin-top:12px">Just for you — nothing is recorded or shared.</p>
+  </div>`;
+}
+
+function variantC(state){
+  if(state==='nocookie') return nocookieBlock('');
+  if(state==='before'){
+    return `<div class="brand">Day of Prayer</div>
+    <div class="c-env fadein">
+      <div class="c-seal">✉️</div>
+      <h1 class="serif">Sealed until ${RESET_AT}</h1>
+      <p class="muted">A name is waiting for you, ${YOU}.<br>Come back when the bell rings.</p>
+      <p class="privacy">Your own request is tucked away too — one person will open it and come pray with you.</p>
+    </div>`;
+  }
+  const people = state==='trio' ? TRIO : [PAIR];
+  const who = people.map(p=>p.name).join(" & ");
+  return `<div class="brand">Day of Prayer</div>
+  <div class="c-env fadein">
+    <p class="c-hand">For you to pray with…</p>
+    <div class="c-letter">
+      ${people.map(p=>`
+        <p class="serif" style="margin:0 0 6px;color:var(--soft)">Dear friend,</p>
+        <p class="req" style="margin:.2em 0">"${p.request}"</p>
+        <p class="c-from">— ${p.name}</p>
+        ${people.length>1?'<hr style="border:none;border-top:1px dashed var(--line);margin:18px 0">':''}
+      `).join("")}
+    </div>
+    <p class="muted" style="margin-top:20px">Find <b>${who}</b> in the room and pray together.</p>
+    <p class="privacy">This letter is only between you${state==='trio'?' three':' two'}.</p>
+  </div>`;
+}
+
+function nocookieBlock(){
+  return `<div class="brand">Day of Prayer</div>
+  <div class="nocookie fadein">
+    <b>We can't find your submission on this device.</b>
+    <p class="muted" style="margin:.6em 0">Your pairing is saved to the phone you signed up on. Open this page on that phone to see who you're praying with.</p>
+    <p class="muted" style="font-size:13px">Different phone or cleared history? Find an organizer — they can look you up by name.</p>
+  </div>`;
+}
+
+// ---------- wiring ----------
+const VARIANTS = {A:{fn:variantA,name:"Single card"}, B:{fn:variantB,name:"Guided steps"}, C:{fn:variantC,name:"Letter / envelope"}};
+const STATES = [["before","Before 11:00"],["after","After (pair)"],["trio","After (trio)"],["nocookie","No cookie"]];
+const qp = new URLSearchParams(location.search);
+let variant = (qp.get('variant')||'A').toUpperCase(); if(!VARIANTS[variant]) variant='A';
+let state = qp.get('state')||'after'; if(!STATES.some(s=>s[0]===state)) state='after';
+
+function render(){
+  document.getElementById('app').innerHTML = VARIANTS[variant].fn(state);
+  document.getElementById('lab').textContent = variant+" — "+VARIANTS[variant].name;
+  document.getElementById('states').innerHTML = STATES.map(([k,l])=>
+    `<a href="?variant=${variant}&state=${k}" class="${k===state?'on':''}">${l}</a>`).join("");
+}
+function go(v){ location.search = `?variant=${v}&state=${state}`; }
+const keys = Object.keys(VARIANTS);
+document.getElementById('next').onclick = ()=>go(keys[(keys.indexOf(variant)+1)%keys.length]);
+document.getElementById('prev').onclick = ()=>go(keys[(keys.indexOf(variant)+keys.length-1)%keys.length]);
+document.addEventListener('keydown',e=>{
+  if(/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if(e.key==='ArrowRight') document.getElementById('next').click();
+  if(e.key==='ArrowLeft') document.getElementById('prev').click();
+});
+render();
+</script>
+</body>
+</html>
