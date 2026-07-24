@@ -13,7 +13,18 @@ export const dynamic = "force-dynamic";
  * 503 otherwise so Railway (and uptime checks) see the difference.
  */
 export async function GET() {
-  const report = await buildHealthReport(pingDatabase);
+  // Log the underlying failure before it is swallowed into a "degraded" report.
+  // Without this, a failed Railway healthcheck gives no clue whether the cause
+  // is an unset/misresolved DATABASE_URL, a TLS mismatch, or a refused
+  // connection — the deploy just cycles on opaque 503s.
+  const report = await buildHealthReport(async () => {
+    try {
+      await pingDatabase();
+    } catch (error) {
+      console.error("[health] database ping failed:", error);
+      throw error;
+    }
+  });
   return NextResponse.json(report, {
     status: report.status === "ok" ? 200 : 503,
   });
