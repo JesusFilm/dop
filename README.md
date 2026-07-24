@@ -14,18 +14,18 @@ behaviour yet.
 ## Stack
 
 - **Next.js 15** (App Router, TypeScript) — one full-stack service
-- **Postgres** — reached via `DATABASE_URL`
+- **Postgres + Prisma** — reached via `DATABASE_URL`; domain models and migrations remain deferred
 - **Railway** — build (Nixpacks) + Postgres + cron on one platform
 - **Vitest** — unit tests
 
 ## Local development
 
-Requires Node ≥ 22 and a reachable Postgres.
+Requires Node ≥ 22.12, pnpm 10, and a reachable Postgres.
 
 ```bash
-npm install
+pnpm install
 cp .env.example .env          # then edit DATABASE_URL to your local Postgres
-npm run dev                   # http://localhost:3000
+pnpm dev                      # http://localhost:3000
 ```
 
 Quickest local Postgres (Docker):
@@ -42,18 +42,17 @@ Then visit **http://localhost:3000/api/health** — it returns `200` with
 ### Checks
 
 ```bash
-npm run typecheck    # tsc --noEmit
-npm test             # vitest run
-npm run build        # production build
+pnpm verify          # format, lint, types, tests, Prisma validation, build
+pnpm db:check        # live Prisma → PostgreSQL connection check
 ```
 
 ## Environment variables
 
-| Variable       | Local                                  | Railway                                                        |
-| -------------- | -------------------------------------- | ------------------------------------------------------------- |
-| `DATABASE_URL` | set in `.env` to your local Postgres   | reference the Postgres plugin: `${{ Postgres.DATABASE_URL }}` |
-| `PGSSLMODE`    | unset                                  | unset on the private network; `require` only for public conns |
-| `PORT`         | unset (defaults to 3000)               | set automatically by Railway                                  |
+| Variable       | Local                                | Railway                                                       |
+| -------------- | ------------------------------------ | ------------------------------------------------------------- |
+| `DATABASE_URL` | set in `.env` to your local Postgres | reference the Postgres plugin: `${{ Postgres.DATABASE_URL }}` |
+| `PGSSLMODE`    | unset                                | unset on the private network; `require` only for public conns |
+| `PORT`         | unset (defaults to 3000)             | set automatically by Railway                                  |
 
 No credentials are committed — `.env` is gitignored; `.env.example` is the
 template.
@@ -66,8 +65,8 @@ Railway dashboard. After this, every push to the default branch auto-deploys.
 1. **Create the project + connect the repo**
    - Railway → **New Project** → **Deploy from GitHub repo** → pick
      `JesusFilm/dop`.
-   - This creates the **app service**. Railway detects `railway.json` and builds
-     with Nixpacks (`npm run build` → `npm run start`).
+   - This creates the **app service**. Railway detects `railway.toml` and builds
+     with Nixpacks (`pnpm build` → `pnpm start`).
 
 2. **Add Postgres**
    - In the project → **New** → **Database** → **Add PostgreSQL**.
@@ -84,7 +83,7 @@ Railway dashboard. After this, every push to the default branch auto-deploys.
 4. **Confirm the deploy pipeline**
    - The app service **Settings → Deploy** should have a **default branch**
      (e.g. `main`) with auto-deploy on. Pushing to it triggers build → deploy.
-   - Health check path is already `/api/health` (from `railway.json`); the
+   - Health check path is already `/api/health` (from `railway.toml`); the
      deploy goes healthy only once Postgres is reachable.
 
 5. **Get the public URL + verify**
@@ -96,3 +95,8 @@ Railway dashboard. After this, every push to the default branch auto-deploys.
 > Later tickets add Railway **cron** services (reveal backstop, next-morning
 > purge). Those are separate cron services in the same project pointing at
 > in-app routes — not needed for this scaffold.
+
+## Agent contributors
+
+Read `AGENTS.md` before making changes.
+It preserves the repository's local skills and domain-document rules, and adds the required Compound Engineering workflow.

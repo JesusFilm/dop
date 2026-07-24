@@ -28,15 +28,15 @@ downstream tickets need one full-stack framework that covers all of:
   in-app routes for the reveal backstop and next-morning purge (§8) without
   extra runtimes.
 
-`pg` (node-postgres) is used directly for the scaffold's health check to prove
-reachability with zero schema commitment. **The ORM/migration choice is
-deliberately deferred to ticket #2** (Data model + migrations).
+Prisma uses its PostgreSQL driver adapter for the scaffold's connection-only
+health check, proving reachability with zero schema commitment. Prisma Client
+generation is established here, while **domain models and migrations remain
+deferred to ticket #2** (Data model + migrations).
 
 ## Consequences
 
 - All later tickets assume Next.js App Router + TypeScript.
-- Railway builds with Nixpacks; deploy config lives in `railway.json`
-  (start command + `/api/health` healthcheck).
-- If a heavier data layer (Prisma/Drizzle) is chosen in #2, the raw `pg` pool in
-  `src/lib/db.ts` is either kept for lightweight checks or replaced — an
-  isolated, low-cost change.
+- Railway builds with Nixpacks; deploy config lives in `railway.toml`
+  (pnpm start command + `/api/health` healthcheck).
+- Ticket #2 extends the model-free Prisma schema with the locked domain model
+  and migrations rather than replacing the connection layer.

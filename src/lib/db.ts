@@ -1,45 +1,65 @@
-import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
+import type { PoolConfig } from "pg";
 
-// A single shared connection pool for the process. Next.js can re-evaluate
-// modules across hot reloads in dev, so we stash the pool on globalThis to
-// avoid leaking pools during development.
+import { PrismaClient } from "@/generated/prisma/client";
+
 declare global {
-  // eslint-disable-next-line no-var
-  var __prayerPgPool: Pool | undefined;
+  var __prayerPrismaClient: PrismaClient | undefined;
 }
 
-/**
- * Returns the shared Postgres pool, creating it on first use.
- *
- * Reads `DATABASE_URL` (Railway provides this automatically when a Postgres
- * plugin is attached to the service). Throws if it is missing so a
- * misconfigured deploy fails loudly at the health check rather than silently.
- */
-export function getPool(): Pool {
-  const connectionString = process.env.DATABASE_URL;
+type DatabaseEnvironment = {
+  DATABASE_URL?: string;
+  PGSSLMODE?: string;
+};
+
+export function buildDatabaseConfig(
+  environment: DatabaseEnvironment,
+): PoolConfig {
+  const connectionString = environment.DATABASE_URL;
+
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
   }
 
-  if (!global.__prayerPgPool) {
-    global.__prayerPgPool = new Pool({
-      connectionString,
-      // Railway's private network (…​.railway.internal) does not use TLS, so
-      // TLS stays off by default. Set PGSSLMODE=require for public/external
-      // connections — `ssl: true` enables TLS *with* certificate verification
-      // (never rejectUnauthorized:false, which would encrypt without
-      // authenticating and leave the connection open to MITM).
-      ssl: process.env.PGSSLMODE === "require" ? true : undefined,
-      // Keep the pool small — this app is single-session and low-traffic.
-      max: 5,
-    });
+  return {
+    connectionString,
+    connectionTimeoutMillis: 5_000,
+    query_timeout: 5_000,
+    ssl: environment.PGSSLMODE === "require" ? true : undefined,
+    max: 5,
+  };
+}
+
+/**
+ * Returns the shared Prisma client, creating it on first use.
+ *
+ * Next.js can re-evaluate modules during development, so the client lives on
+ * globalThis to avoid leaking PostgreSQL pools across hot reloads.
+ */
+export function getDatabase(): PrismaClient {
+  if (!global.__prayerPrismaClient) {
+    const adapter = new PrismaPg(
+      buildDatabaseConfig({
+        DATABASE_URL: process.env.DATABASE_URL,
+        PGSSLMODE: process.env.PGSSLMODE,
+      }),
+    );
+    global.__prayerPrismaClient = new PrismaClient({ adapter });
   }
 
-  return global.__prayerPgPool;
+  return global.__prayerPrismaClient;
 }
 
 /** Runs the cheapest possible round-trip to confirm the database answers. */
 export async function pingDatabase(): Promise<void> {
-  const pool = getPool();
-  await pool.query("SELECT 1");
+  await getDatabase().$queryRaw`SELECT 1`;
+}
+
+export async function disconnectDatabase(): Promise<void> {
+  if (!global.__prayerPrismaClient) {
+    return;
+  }
+
+  await global.__prayerPrismaClient.$disconnect();
+  global.__prayerPrismaClient = undefined;
 }
