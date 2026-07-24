@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  computePurgeAfter,
+  formatZonedDateTime,
+  parseWallClock,
+  PURGE_HOUR,
+} from "@/lib/time";
+
+const AUCKLAND = "Pacific/Auckland";
+
+describe("parseWallClock", () => {
+  it("converts a Pacific/Auckland wall-clock date+time to a UTC instant (NZST, July)", () => {
+    // Monday's config: open 09:00 / reveal 11:00 Pacific/Auckland. July is NZST
+    // (UTC+12, no DST), so 09:00 local = 21:00 UTC the previous day (#14, §5).
+    expect(parseWallClock("2026-07-27", "09:00", AUCKLAND)).toEqual(
+      new Date("2026-07-26T21:00:00.000Z"),
+    );
+    expect(parseWallClock("2026-07-27", "11:00", AUCKLAND)).toEqual(
+      new Date("2026-07-26T23:00:00.000Z"),
+    );
+  });
+
+  it("respects daylight saving (NZDT, January = UTC+13)", () => {
+    // In January NZ is on NZDT (UTC+13), so 09:00 local = 20:00 UTC prev day.
+    expect(parseWallClock("2027-01-01", "09:00", AUCKLAND)).toEqual(
+      new Date("2026-12-31T20:00:00.000Z"),
+    );
+  });
+
+  it("rejects a malformed date", () => {
+    expect(() => parseWallClock("27-07-2026", "09:00", AUCKLAND)).toThrow(
+      /date/i,
+    );
+  });
+
+  it("rejects a malformed time", () => {
+    expect(() => parseWallClock("2026-07-27", "9am", AUCKLAND)).toThrow(
+      /time/i,
+    );
+  });
+
+  it("rejects an out-of-range time", () => {
+    expect(() => parseWallClock("2026-07-27", "25:00", AUCKLAND)).toThrow(
+      /time/i,
+    );
+  });
+});
+
+describe("computePurgeAfter", () => {
+  it("is the morning after the event date at PURGE_HOUR in the zone", () => {
+    // Event 2026-07-27 → purge 2026-07-28 06:00 NZST = 2026-07-27T18:00:00Z.
+    expect(PURGE_HOUR).toBe(6);
+    expect(computePurgeAfter("2026-07-27", AUCKLAND)).toEqual(
+      new Date("2026-07-27T18:00:00.000Z"),
+    );
+  });
+
+  it("rolls into the next month correctly", () => {
+    // Event 2026-07-31 → purge 2026-08-01 06:00 NZST = 2026-07-31T18:00:00Z.
+    expect(computePurgeAfter("2026-07-31", AUCKLAND)).toEqual(
+      new Date("2026-07-31T18:00:00.000Z"),
+    );
+  });
+});
+
+describe("formatZonedDateTime", () => {
+  it("renders the instant back in the zone's wall clock", () => {
+    const formatted = formatZonedDateTime(
+      new Date("2026-07-26T23:00:00.000Z"),
+      AUCKLAND,
+    );
+    // 11:00 on Mon 27 Jul in Auckland.
+    expect(formatted).toMatch(/11:00/);
+    expect(formatted).toMatch(/2026/);
+    expect(formatted).toMatch(/Jul/i);
+  });
+});
