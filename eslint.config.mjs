@@ -10,6 +10,9 @@ export default defineConfig([
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   globalIgnores([
     ".next/**",
+    // Git worktrees (git-ignored) live here; they are full repo copies and
+    // must not be linted as part of this project's source.
+    ".claude/**",
     "coverage/**",
     "node_modules/**",
     "src/generated/**",
