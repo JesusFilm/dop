@@ -27,3 +27,6 @@ src/generated/prisma/
 .env
 .env.local
 .env.*.local
+
+# pnpm content-addressable store (placed in-repo because home dir is on a different mount)
+.pnpm-store/
