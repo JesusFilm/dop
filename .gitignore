@@ -20,6 +20,9 @@ next-env.d.ts
 # Test / coverage
 coverage/
 
+# Generated Prisma client
+src/generated/prisma/
+
 # Environment
 .env
 .env.local

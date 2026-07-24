@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Emit a self-contained server bundle so the Railway image stays small
-  // and `next start` has everything it needs at runtime.
+  // Emit a self-contained server bundle so Railway only starts traced runtime
+  // dependencies. The build script adds Next's static assets to this bundle.
   output: "standalone",
 };
 

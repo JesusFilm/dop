@@ -16,8 +16,7 @@ export default function Home() {
     >
       <h1 style={{ fontSize: "1.5rem", margin: 0 }}>Day of Prayer</h1>
       <p style={{ color: "#555", margin: 0 }}>
-        Scaffold is live. Health at{" "}
-        <a href="/api/health">/api/health</a>.
+        Scaffold is live. Health at <a href="/api/health">/api/health</a>.
       </p>
     </main>
   );

@@ -1,0 +1,10 @@
+.agents/skills
+.devcontainer
+.scratch
+.next
+coverage
+docs/prayer-activity-spec.md
+node_modules
+pnpm-lock.yaml
+skills-lock.json
+src/generated
