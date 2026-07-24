@@ -32,7 +32,15 @@ function parseDateParts(dateValue: string): {
   const year = Number(dateMatch[1]);
   const month = Number(dateMatch[2]);
   const day = Number(dateMatch[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
+  if (month < 1 || month > 12 || day < 1) {
+    throw new Error(`Invalid date "${dateValue}".`);
+  }
+  // Reject impossible days for the month (e.g. 31 Apr, 30 Feb) rather than
+  // letting Date silently roll them into the next month, which would create a
+  // session for a different calendar date than the organizer entered. Day 0 of
+  // the next month is the last day of this one, so this is leap-year correct.
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day > daysInMonth) {
     throw new Error(`Invalid date "${dateValue}".`);
   }
   return { year, month, day };

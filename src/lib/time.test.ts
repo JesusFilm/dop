@@ -34,6 +34,23 @@ describe("parseWallClock", () => {
     );
   });
 
+  it("rejects an impossible day-of-month instead of silently rolling it over", () => {
+    // April has 30 days and Feb 2026 has 28; without a days-in-month check these
+    // would roll into the next month (30 Apr / 2 Mar), creating a session for a
+    // different calendar date than the organizer entered.
+    expect(() => parseWallClock("2026-04-31", "09:00", AUCKLAND)).toThrow(
+      /date/i,
+    );
+    expect(() => parseWallClock("2026-02-30", "09:00", AUCKLAND)).toThrow(
+      /date/i,
+    );
+    // Leap-year correct: 29 Feb 2028 is valid, 29 Feb 2026 is not.
+    expect(() => parseWallClock("2028-02-29", "09:00", AUCKLAND)).not.toThrow();
+    expect(() => parseWallClock("2026-02-29", "09:00", AUCKLAND)).toThrow(
+      /date/i,
+    );
+  });
+
   it("rejects a malformed time", () => {
     expect(() => parseWallClock("2026-07-27", "9am", AUCKLAND)).toThrow(
       /time/i,
