@@ -1,0 +1,211 @@
+import type {
+  Group,
+  PrismaClient,
+  Session,
+  Submission,
+} from "@/generated/prisma/client";
+
+/**
+ * The sanctioned data-access layer for the whole app.
+ *
+ * Privacy invariant (Privacy #3, spec §3): requests are retrievable **only
+ * per-assignment** — a member fetching their own group via
+ * {@link getGroupAssignment}. This module deliberately exposes **no** function
+ * that lists or returns every request for a session; `countSubmissions`
+ * returns a bare number and never request content. Route handlers must go
+ * through this module rather than reaching for the raw Prisma client, so the
+ * "no all-requests path" guarantee holds at the application's data boundary.
+ */
+
+/**
+ * The subset of the Prisma client this layer depends on. Narrowing the surface
+ * keeps the functions unit-testable with a fake and documents exactly which
+ * delegate operations the data-access boundary is allowed to perform. The real
+ * {@link PrismaClient} satisfies it.
+ */
+export type DataClient = Pick<PrismaClient, "session" | "submission" | "group">;
+
+export interface CreateSessionInput {
+  name: string;
+  /** Unique/unguessable slug for the organizer setup page (#9). */
+  setupPath: string;
+  /** Absolute instant for the organizer-set open time (#14). */
+  opensAt: Date;
+  /** Absolute instant for the reveal (close = reveal, one instant) (#14). */
+  revealAt: Date;
+  /** Absolute instant for the next-morning purge. */
+  purgeAfter: Date;
+  /**
+   * IANA zone the organizer's wall-clock inputs were entered in. Defaults to
+   * the fixed "Pacific/Auckland" (#14); there is no timezone picker.
+   */
+  timeZone?: string;
+}
+
+export interface CreateSubmissionInput {
+  sessionId: string;
+  /** Cookie value; one submission per device per session (§6). */
+  deviceToken: string;
+  /** Short bearer credential shown once at submit (#8). */
+  recoveryCode: string;
+  /** Required (#13). */
+  firstName: string;
+  /** Required (#13). */
+  lastName: string;
+  request: string;
+}
+
+/** One member of a group as seen from within that group. */
+export interface GroupMember {
+  submissionId: string;
+  firstName: string;
+  lastName: string;
+  request: string;
+  /** True for the requesting member's own submission. */
+  isSelf: boolean;
+}
+
+export interface GroupAssignment {
+  groupId: string;
+  members: GroupMember[];
+}
+
+/** Creates the single session (organizer setup, create-once, §7.5). */
+export function createSession(
+  client: DataClient,
+  input: CreateSessionInput,
+): Promise<Session> {
+  return client.session.create({
+    data: {
+      name: input.name,
+      setupPath: input.setupPath,
+      opensAt: input.opensAt,
+      revealAt: input.revealAt,
+      purgeAfter: input.purgeAfter,
+      ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+    },
+  });
+}
+
+/** Looks up a session by its unguessable setup path (setup page load). */
+export function findSessionBySetupPath(
+  client: DataClient,
+  setupPath: string,
+): Promise<Session | null> {
+  return client.session.findUnique({ where: { setupPath } });
+}
+
+/**
+ * Records one submission. The `(sessionId, deviceToken)` unique constraint
+ * enforces one submission per device per session (§6); a duplicate device
+ * rejects at the database rather than here.
+ */
+export function createSubmission(
+  client: DataClient,
+  input: CreateSubmissionInput,
+): Promise<Submission> {
+  return client.submission.create({
+    data: {
+      sessionId: input.sessionId,
+      deviceToken: input.deviceToken,
+      recoveryCode: input.recoveryCode,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      request: input.request,
+    },
+  });
+}
+
+/**
+ * Returns the caller's own submission for this device (return-on-same-phone,
+ * §6). Owner-scoped retrieval: keyed by the caller's own cookie.
+ */
+export function findSubmissionByDeviceToken(
+  client: DataClient,
+  sessionId: string,
+  deviceToken: string,
+): Promise<Submission | null> {
+  return client.submission.findUnique({
+    where: { sessionId_deviceToken: { sessionId, deviceToken } },
+  });
+}
+
+/**
+ * Restores the caller's own submission from their recovery code on any device
+ * (#8, §7.4). Owner-scoped retrieval: keyed by the bearer credential the owner
+ * holds — same privacy risk profile as the return link, no new exposure model.
+ */
+export function findSubmissionByRecoveryCode(
+  client: DataClient,
+  sessionId: string,
+  recoveryCode: string,
+): Promise<Submission | null> {
+  return client.submission.findUnique({
+    where: { sessionId_recoveryCode: { sessionId, recoveryCode } },
+  });
+}
+
+/**
+ * The live submission count for the setup-page dashboard (§7.5, #8). Returns a
+ * bare number only — never request content (Privacy #3). Also reads 0 after the
+ * next-morning purge, doubling as the purge-verification view.
+ */
+export function countSubmissions(
+  client: DataClient,
+  sessionId: string,
+): Promise<number> {
+  return client.submission.count({ where: { sessionId } });
+}
+
+/**
+ * The **only** path to prayer requests: a member fetching their own group
+ * (Privacy #3, spec §3). Returns null when the caller is not yet in a frozen
+ * group (before reveal, or the lone n=1 person). The group is located by
+ * membership, so a caller can only ever read a group they belong to; only that
+ * group's members' requests are returned.
+ */
+export async function getGroupAssignment(
+  client: DataClient,
+  params: { sessionId: string; submissionId: string },
+): Promise<GroupAssignment | null> {
+  const group: Pick<Group, "id" | "memberSubmissionIds"> | null =
+    await client.group.findFirst({
+      where: {
+        sessionId: params.sessionId,
+        memberSubmissionIds: { has: params.submissionId },
+      },
+      select: { id: true, memberSubmissionIds: true },
+    });
+
+  if (!group) {
+    return null;
+  }
+
+  const members = await client.submission.findMany({
+    where: { id: { in: group.memberSubmissionIds } },
+    select: { id: true, firstName: true, lastName: true, request: true },
+  });
+
+  // `findMany` does not guarantee it returns rows in `id: { in: [...] }`
+  // order, so re-order by memberSubmissionIds to keep the return view's
+  // numbered partner cards stable across reads (§7.3).
+  const membersById = new Map(members.map((member) => [member.id, member]));
+
+  return {
+    groupId: group.id,
+    members: group.memberSubmissionIds.flatMap((id) => {
+      const member = membersById.get(id);
+      return member
+        ? [
+            {
+              submissionId: member.id,
+              firstName: member.firstName,
+              lastName: member.lastName,
+              request: member.request,
+              isSelf: member.id === params.submissionId,
+            },
+          ]
+        : [];
+    }),
+  };
+}
