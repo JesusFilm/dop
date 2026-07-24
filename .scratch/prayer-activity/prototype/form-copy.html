@@ -1,0 +1,452 @@
+<!--
+  PROTOTYPE — throwaway. Question for ticket #7 "Form + confirmation copy".
+  Answers: what tone wins over reluctant submitters? Three copy variants
+  (Warm / Simple / Guided) over one clean mobile flow. Structure is fixed
+  on purpose — the ticket's question is TONE, not layout.
+  Screens: Submit -> Confirmation -> Return (pre-11:00, editable).
+  Consent facts are locked by Privacy #3 and identical across variants;
+  only the phrasing changes.
+-->
+<title>Prayer request — form &amp; confirmation copy</title>
+<style>
+  :root {
+    --ground: #ECEAE4;
+    --paper: #F7F5F0;
+    --ink: #1E2422;
+    --ink-soft: #55605B;
+    --line: #D8D5CC;
+    --accent: #3E6B5E;
+    --accent-soft: #E3ECE7;
+    --clay: #C67B5C;
+    --shadow: 0 1px 2px rgba(30,36,34,.06), 0 8px 28px rgba(30,36,34,.09);
+    --radius: 18px;
+    --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #101413;
+      --paper: #1A1F1D;
+      --ink: #ECEAE3;
+      --ink-soft: #9AA6A0;
+      --line: #2C332F;
+      --accent: #7FB3A2;
+      --accent-soft: #1E2A26;
+      --clay: #D89877;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #101413; --paper: #1A1F1D; --ink: #ECEAE3; --ink-soft: #9AA6A0;
+    --line: #2C332F; --accent: #7FB3A2; --accent-soft: #1E2A26; --clay: #D89877;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+  }
+  :root[data-theme="light"] {
+    --ground: #ECEAE4; --paper: #F7F5F0; --ink: #1E2422; --ink-soft: #55605B;
+    --line: #D8D5CC; --accent: #3E6B5E; --accent-soft: #E3ECE7; --clay: #C67B5C;
+    --shadow: 0 1px 2px rgba(30,36,34,.06), 0 8px 28px rgba(30,36,34,.09);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    padding: 28px 16px 120px;
+  }
+
+  /* --- prototype chrome --- */
+  .harness-head {
+    max-width: 420px; margin: 0 auto 18px; text-align: center;
+  }
+  .harness-head .kicker {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  .harness-head h1 {
+    font-family: var(--serif); font-weight: 600; font-size: 19px;
+    margin: 6px 0 4px; text-wrap: balance;
+  }
+  .harness-head p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+
+  .screen-tabs {
+    display: flex; gap: 4px; max-width: 420px; margin: 0 auto 16px;
+    background: var(--paper); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px;
+  }
+  .screen-tabs button {
+    flex: 1; border: 0; background: transparent; color: var(--ink-soft);
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 6px;
+    border-radius: 999px; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .screen-tabs button[aria-selected="true"] {
+    background: var(--accent); color: #fff;
+  }
+  :root[data-theme="dark"] .screen-tabs button[aria-selected="true"],
+  @media (prefers-color-scheme: dark) { }
+
+  /* --- phone card --- */
+  .phone {
+    max-width: 420px; margin: 0 auto;
+    background: var(--paper); border: 1px solid var(--line);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .phone-inner { padding: 30px 26px 34px; }
+
+  .brand {
+    display: flex; align-items: center; gap: 9px; margin-bottom: 26px;
+  }
+  .brand .dot {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, var(--clay), var(--accent));
+    flex: none;
+  }
+  .brand span {
+    font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-soft); font-weight: 600;
+  }
+
+  h2.head {
+    font-family: var(--serif); font-weight: 600; font-size: 27px;
+    line-height: 1.15; margin: 0 0 10px; text-wrap: balance;
+  }
+  .sub { margin: 0 0 22px; color: var(--ink-soft); font-size: 15px; }
+
+  label.field-label {
+    display: block; font-size: 12.5px; font-weight: 600;
+    letter-spacing: .02em; margin-bottom: 7px; color: var(--ink);
+  }
+  input[type="text"], textarea {
+    width: 100%; font: inherit; font-size: 15.5px; color: var(--ink);
+    background: var(--ground); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; resize: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  textarea { min-height: 118px; line-height: 1.45; }
+  .field { margin-bottom: 18px; }
+
+  /* starter chips (variant C) */
+  .starters { display: none; flex-wrap: wrap; gap: 8px; margin: -6px 0 18px; }
+  .starters button {
+    font: inherit; font-size: 13px; font-weight: 500;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid transparent; border-radius: 999px;
+    padding: 7px 13px; cursor: pointer; transition: border-color .15s;
+  }
+  .starters button:hover { border-color: var(--accent); }
+
+  .consent {
+    display: flex; gap: 11px; align-items: flex-start;
+    background: var(--accent-soft); border-radius: 12px;
+    padding: 13px 15px; margin: 4px 0 22px;
+    font-size: 13px; color: var(--ink-soft); line-height: 1.45;
+  }
+  .consent .lock { flex: none; margin-top: 1px; color: var(--accent); }
+
+  .cta {
+    width: 100%; border: 0; border-radius: 12px; cursor: pointer;
+    background: var(--accent); color: #fff; font: inherit;
+    font-size: 16px; font-weight: 600; padding: 14px; letter-spacing: .01em;
+    transition: filter .15s;
+  }
+  .cta:hover { filter: brightness(1.06); }
+  .fineprint { text-align: center; font-size: 12px; color: var(--ink-soft); margin: 14px 0 0; }
+
+  /* confirmation */
+  .confirm { text-align: center; padding: 8px 4px; }
+  .confirm .seal {
+    width: 62px; height: 62px; border-radius: 50%; margin: 6px auto 22px;
+    background: var(--accent-soft); display: grid; place-items: center;
+    color: var(--accent);
+  }
+  .confirm h2.head { font-size: 25px; }
+  .confirm .sub { margin-bottom: 24px; }
+  .clock-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--ground); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 16px; font-size: 13.5px; font-weight: 600;
+    color: var(--ink);
+  }
+  .clock-badge .t { color: var(--accent); }
+
+  /* return / already-submitted */
+  .recap {
+    background: var(--ground); border: 1px solid var(--line);
+    border-radius: 12px; padding: 15px 16px; margin: 0 0 20px; text-align: left;
+  }
+  .recap .who { font-size: 12px; color: var(--ink-soft); margin: 0 0 6px;
+    letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+  .recap .what { margin: 0; font-size: 15px; font-family: var(--serif); }
+  .ghost-cta {
+    width: 100%; border: 1px solid var(--line); border-radius: 12px; cursor: pointer;
+    background: transparent; color: var(--ink); font: inherit;
+    font-size: 15px; font-weight: 600; padding: 12px;
+  }
+  .ghost-cta:hover { border-color: var(--accent); color: var(--accent); }
+
+  .hidden { display: none !important; }
+
+  /* --- tone switcher (floating bar) --- */
+  .switcher {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px; z-index: 50;
+    background: var(--ink); color: var(--paper);
+    border-radius: 999px; padding: 6px 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.28);
+  }
+  .switcher button {
+    border: 0; background: transparent; color: var(--paper);
+    font: inherit; cursor: pointer; border-radius: 999px;
+    width: 34px; height: 34px; font-size: 17px; opacity: .8;
+  }
+  .switcher button:hover { opacity: 1; background: rgba(255,255,255,.12); }
+  .switcher .label {
+    min-width: 158px; text-align: center; font-size: 13px; font-weight: 600;
+    padding: 0 8px;
+  }
+  .switcher .label small { display: block; font-weight: 500; font-size: 10.5px;
+    letter-spacing: .1em; text-transform: uppercase; opacity: .55; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="harness-head">
+  <div class="kicker">Prototype · Ticket #7</div>
+  <h1>Submission experience — copy &amp; tone</h1>
+  <p>Flip the tone at the bottom (← →). Switch screens above. Structure is fixed; the question is how it reads.</p>
+</div>
+
+<div class="screen-tabs" role="tablist" aria-label="Screen">
+  <button role="tab" aria-selected="true" data-screen="submit">1 · Submit</button>
+  <button role="tab" aria-selected="false" data-screen="confirm">2 · Confirmation</button>
+  <button role="tab" aria-selected="false" data-screen="return">3 · Return</button>
+</div>
+
+<div class="phone">
+  <div class="phone-inner">
+    <div class="brand"><span class="dot"></span><span id="brandLabel">Day of Prayer</span></div>
+
+    <!-- SCREEN 1: SUBMIT -->
+    <section id="screen-submit">
+      <h2 class="head" id="s-head"></h2>
+      <p class="sub" id="s-sub"></p>
+
+      <div class="starters" id="s-starters" aria-label="Prompt starters"></div>
+
+      <div class="field">
+        <label class="field-label" for="s-name">Your name</label>
+        <input type="text" id="s-name" placeholder="First name is fine" />
+      </div>
+      <div class="field">
+        <label class="field-label" for="s-req" id="s-req-label">Your prayer request</label>
+        <textarea id="s-req" placeholder=""></textarea>
+      </div>
+
+      <div class="consent">
+        <span class="lock" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        <span id="s-consent"></span>
+      </div>
+
+      <button class="cta" id="s-cta"></button>
+      <p class="fineprint" id="s-fine"></p>
+    </section>
+
+    <!-- SCREEN 2: CONFIRMATION -->
+    <section id="screen-confirm" class="confirm hidden">
+      <div class="seal" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </div>
+      <h2 class="head" id="c-head"></h2>
+      <p class="sub" id="c-sub"></p>
+      <div class="clock-badge">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span id="c-clock"></span>
+      </div>
+    </section>
+
+    <!-- SCREEN 3: RETURN (pre-11:00, editable) -->
+    <section id="screen-return" class="hidden">
+      <h2 class="head" id="r-head"></h2>
+      <p class="sub" id="r-sub"></p>
+      <div class="recap">
+        <p class="who">You wrote</p>
+        <p class="what">Please pray for my mum — she has a scan on Tuesday and we're all a bit anxious about it.</p>
+      </div>
+      <button class="ghost-cta" id="r-cta"></button>
+      <p class="fineprint" id="r-fine"></p>
+    </section>
+  </div>
+</div>
+
+<div class="switcher" role="group" aria-label="Copy tone">
+  <button id="prev" aria-label="Previous tone">←</button>
+  <div class="label"><small>Tone</small><span id="tone-name"></span></div>
+  <button id="next" aria-label="Next tone">→</button>
+</div>
+
+<script>
+  // Consent facts are LOCKED by Privacy #3 — one partner reads it, never public,
+  // no organizer-wide view, deleted next day. Only phrasing varies per tone.
+  const VARIANTS = {
+    A: {
+      name: "Warm & personal",
+      submit: {
+        head: "Share something to pray for",
+        sub: "This morning we're praying for one another. Write down what's on your heart — one other person will carry it with you.",
+        reqLabel: "What would you like prayer for?",
+        placeholder: "It doesn't need to be big or polished — a worry, a hope, someone you love, a decision you're facing. Whatever you'd like prayer for today.",
+        starters: null,
+        consent: "Just one person — the one you're paired with — will read this. It's never shown publicly, no one sees everyone's, and it's all deleted tomorrow.",
+        cta: "Share my request",
+        fine: "Submissions close at 11:00."
+      },
+      confirm: {
+        head: "Thank you — it's in.",
+        sub: "Come back to this page after 11:00 and we'll show you who you're praying for. Find each other, and pray together.",
+        clock: "See who you're paired with — after 11:00"
+      },
+      return: {
+        head: "You're all set",
+        sub: "You can change your request any time before 11:00.",
+        cta: "Edit my request",
+        fine: "After 11:00 you'll see who you're paired with."
+      }
+    },
+    B: {
+      name: "Simple & direct",
+      submit: {
+        head: "Prayer request",
+        sub: "Add your name and something you'd like prayer for today.",
+        reqLabel: "Your prayer request",
+        placeholder: "Whatever you'd like prayer for.",
+        starters: null,
+        consent: "Read only by the one person you're paired with. Never public. Deleted tomorrow.",
+        cta: "Submit",
+        fine: "Closes at 11:00."
+      },
+      confirm: {
+        head: "Done.",
+        sub: "Come back after 11:00 to see who you're paired with — then meet up and pray together.",
+        clock: "Your match appears at 11:00"
+      },
+      return: {
+        head: "Submitted",
+        sub: "Editable until 11:00.",
+        cta: "Edit",
+        fine: "Your match appears after 11:00."
+      }
+    },
+    C: {
+      name: "Guided starters",
+      submit: {
+        head: "What can we pray for?",
+        sub: "Not sure where to start? Tap a prompt below, or just write your own.",
+        reqLabel: "Your prayer request",
+        placeholder: "A few words is plenty.",
+        starters: [
+          ["Someone I love", "Please pray for someone I love — "],
+          ["A decision I'm facing", "Please pray about a decision I'm facing — "],
+          ["Something I'm worried about", "I'm worried about "],
+          ["Something I'm thankful for", "I'm thankful for "],
+          ["My work", "Please pray for my work — "],
+          ["My health", "Please pray for my health — "]
+        ],
+        consent: "Only the person you're paired with will read this. It's never public, and it's deleted the next day.",
+        cta: "Send it in",
+        fine: "You can add or change this until 11:00."
+      },
+      confirm: {
+        head: "Got it — thank you.",
+        sub: "After 11:00, come back here and we'll introduce you to the person you're praying with. Then find them and pray together.",
+        clock: "Meet your person — after 11:00"
+      },
+      return: {
+        head: "Thanks — it's saved",
+        sub: "Want to add anything? You can edit until 11:00.",
+        cta: "Add to / edit my request",
+        fine: "We'll introduce your prayer partner after 11:00."
+      }
+    }
+  };
+
+  const ORDER = ["A", "B", "C"];
+  let cur = 0;
+
+  const $ = (id) => document.getElementById(id);
+
+  function renderStarters(list) {
+    const box = $("s-starters");
+    box.innerHTML = "";
+    if (!list) { box.style.display = "none"; return; }
+    box.style.display = "flex";
+    for (const [label, prefill] of list) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.addEventListener("click", () => {
+        const ta = $("s-req");
+        ta.value = prefill;
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      });
+      box.appendChild(b);
+    }
+  }
+
+  function render() {
+    const v = VARIANTS[ORDER[cur]];
+    $("tone-name").textContent = v.name;
+
+    // submit
+    $("s-head").textContent = v.submit.head;
+    $("s-sub").textContent = v.submit.sub;
+    $("s-req-label").textContent = v.submit.reqLabel;
+    $("s-req").placeholder = v.submit.placeholder;
+    $("s-consent").textContent = v.submit.consent;
+    $("s-cta").textContent = v.submit.cta;
+    $("s-fine").textContent = v.submit.fine;
+    renderStarters(v.submit.starters);
+
+    // confirm
+    $("c-head").textContent = v.confirm.head;
+    $("c-sub").textContent = v.confirm.sub;
+    $("c-clock").innerHTML = v.confirm.clock.replace(/11:00/g, '<span class="t">11:00</span>');
+
+    // return
+    $("r-head").textContent = v.return.head;
+    $("r-sub").textContent = v.return.sub;
+    $("r-cta").textContent = v.return.cta;
+    $("r-fine").textContent = v.return.fine;
+  }
+
+  function step(d) { cur = (cur + d + ORDER.length) % ORDER.length; render(); }
+  $("prev").addEventListener("click", () => step(-1));
+  $("next").addEventListener("click", () => step(1));
+  document.addEventListener("keydown", (e) => {
+    const t = e.target.tagName;
+    if (t === "INPUT" || t === "TEXTAREA" || e.target.isContentEditable) return;
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+  });
+
+  // screen tabs
+  const screens = { submit: $("screen-submit"), confirm: $("screen-confirm"), return: $("screen-return") };
+  document.querySelectorAll(".screen-tabs button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".screen-tabs button").forEach((b) => b.setAttribute("aria-selected", "false"));
+      btn.setAttribute("aria-selected", "true");
+      const which = btn.dataset.screen;
+      for (const key in screens) screens[key].classList.toggle("hidden", key !== which);
+    });
+  });
+
+  render();
+</script>
