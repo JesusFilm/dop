@@ -181,8 +181,15 @@ export async function getGroupAssignment(
     return null;
   }
 
+  // Re-scope the member read to the same session as defence-in-depth: the ids
+  // come from a session-scoped group row so they cannot cross sessions today,
+  // but this keeps the request-read query itself session-bound rather than
+  // trusting the pairing layer (#7) never to write a foreign submission id.
   const members = await client.submission.findMany({
-    where: { id: { in: group.memberSubmissionIds } },
+    where: {
+      sessionId: params.sessionId,
+      id: { in: group.memberSubmissionIds },
+    },
     select: { id: true, firstName: true, lastName: true, request: true },
   });
 

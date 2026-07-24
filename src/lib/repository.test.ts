@@ -230,9 +230,10 @@ describe("getGroupAssignment", () => {
       submissionId: "sub_self",
     });
 
-    // Only the members of the caller's own group are queried.
+    // Only the members of the caller's own group are queried, and the read is
+    // re-scoped to the session as defence-in-depth (Privacy #3).
     expect(findMany).toHaveBeenCalledWith({
-      where: { id: { in: ["sub_self", "sub_partner"] } },
+      where: { sessionId: "sess_1", id: { in: ["sub_self", "sub_partner"] } },
       select: { id: true, firstName: true, lastName: true, request: true },
     });
     expect(assignment).toEqual({
