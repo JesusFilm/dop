@@ -14,7 +14,7 @@ execution: code
 
 ## Goal Capsule
 
-- **Objective:** Build the production participant arrival, lobby, room assignment, and room-handoff experience for one in-person Day of Prayer gathering.
+- **Objective:** Refine the production participant arrival, hidden assignment, organizer monitoring, reveal, and room-handoff experience for one in-person Day of Prayer gathering.
 - **Product authority:** This plan records the room-based direction confirmed by the product owner. It supersedes the incompatible pair-matching behavior in `CONTEXT.md` and `docs/prayer-activity-spec.md` for this work while preserving the platform decision in `docs/adr/0001-nextjs-on-railway.md`.
 - **Active boundary:** This work ends when each participant knows their room, fellow group members, and current room coordinator.
 - **Open blockers:** None.
@@ -28,21 +28,25 @@ execution: code
 
 ### Summary
 
-Create one live Day of Prayer gathering where participants join by name, wait together, and receive a synchronized room assignment when the organizer launches.
-Each room has a randomly selected coordinator, while the organizer can monitor the gathering and reset it for another run.
+Create one live Day of Prayer gathering where participants join by name, receive a hidden deterministic room assignment immediately, wait together, and see that assignment when the organizer launches the reveal.
+Each room has a randomly selected coordinator at reveal, while the organizer can monitor live provisional rosters and reset the gathering for another run.
 
 ### Problem Frame
 
 The Day of Prayer gathering is a greenfield team-run experience rather than a replacement for an existing manual process.
 The transition from one large gathering into smaller prayer rooms needs to feel intentional, personal, and dependable for 30–50 people using their own phones.
+Assignments must favor viable groups of at least two before distributing additional participants, remain deterministic from join order and seeded room order, and stay hidden from participants until the shared reveal.
 The Stitch output establishes the visual direction, but the application now needs production behavior for shared state, re-entry, assignment, privacy, and event-day operation.
 
 ### Key Decisions
 
 - **Use one live gathering with same-device participant continuity.** (session-settled: user-directed — chosen over accounts or recovery codes: device changes can be handled manually for this event.) Governs R1, R4, R5.
-- **Keep the organizer route open.** (session-settled: user-directed — chosen over authentication or a PIN: the team accepts the access risk for this controlled gathering.) Governs R17, R18, R24.
+- **Keep the organizer experience open at `/admin`.** (session-settled: user-directed — chosen over authentication or a PIN: the team accepts the access risk for this controlled gathering.) Governs R17, R18, R24.
 - **Make launch final.** (session-settled: user-directed — chosen over organizer corrections after assignment: late arrivals can be placed automatically and manual intervention is unnecessary.) Governs R15, R16, R19.
-- **Balance across every configured room while respecting optional capacities.** (session-settled: user-directed — chosen over unconstrained random grouping: room sizes should be as even as the configured limits allow.) Governs R10, R12, R13, R16.
+- **Assign deterministically as participants join.** (session-settled: user-directed — chosen over randomized launch-time balancing: join order and seeded room order should fully determine placement.) Governs R7, R11, R13, R15, R16.
+- **Seed each room with two participants before ordinary round robin.** (session-settled: user-directed — chosen over one-at-a-time balancing from the start: viable two-person groups should form before the algorithm advances.) Governs R10, R13.
+- **Keep seeded rooms immutable in the application.** (session-settled: user-directed — chosen over organizer room creation, editing, and deletion: room configuration is controlled outside the event-day interface.) Governs R9, R10, R11, R19, R25.
+- **Use launch only to reveal and finalize hidden assignments.** (session-settled: user-directed — chosen over assigning the waiting roster at launch: the organizer should see assignments as participants arrive while participants wait for a shared reveal.) Governs R6, R11, R14, R15, R18.
 - **Select one coordinator randomly per room.** (session-settled: user-directed — chosen over a preassigned facilitator or informal volunteer: the application should distribute responsibility.) Governs R14.
 - **Allow immediate coordinator takeover.** (session-settled: user-directed — chosen over coordinator approval or group confirmation: an unavailable coordinator must not block the room.) Governs R20, R21.
 - **Collect personal prayer requests before the room experience exists.** (session-settled: user-directed — chosen over deferring collection: requests should be retained privately for the later experience.) Governs R2, R3, R18, R25.
@@ -68,9 +72,9 @@ The following breakdown is the current understanding, not a committed roadmap:
 
 ### Actors
 
-- A1. **Participant:** Joins from a personal device, waits for assignment, travels to the assigned room, and may take over as coordinator.
+- A1. **Participant:** Joins from a personal device, waits for the assignment reveal, travels to the assigned room, and may take over as coordinator.
 - A2. **Room coordinator:** A participant selected at random whose current identity is shared with every member of the room.
-- A3. **Organizer:** Configures physical rooms, monitors arrivals, launches assignment, reviews room rosters, and resets the gathering.
+- A3. **Organizer:** Monitors arrivals and provisional rosters, launches the shared reveal, reviews coordinators, and resets the gathering.
 
 ### Requirements
 
@@ -84,35 +88,35 @@ The following breakdown is the current understanding, not a committed roadmap:
 
 **Lobby and synchronization**
 
-- R6. After joining, the participant enters a lobby that confirms their place and shows the live joined count without revealing a room assignment early.
-- R7. The lobby and room-handoff screens update automatically when the shared gathering state changes.
+- R6. After joining, the participant enters a lobby that confirms their place and shows the live joined count without revealing their already-recorded room assignment.
+- R7. Joining assigns the participant immediately, while the lobby and room-handoff screens update automatically when the shared gathering state changes.
 - R8. Participant and gathering state survives ordinary page reloads and transient connection loss.
 
 **Room setup**
 
-- R9. Before launch, the organizer can add, remove, rename, and describe the physical rooms available for the gathering.
-- R10. Each room can have an optional maximum capacity, and any non-empty room configuration must retain at least one room without a maximum.
-- R11. Before launch, the organizer can see the joined participant count, room configuration, and capacity status before confirming launch.
+- R9. Physical rooms are seeded outside the event-day application and are read-only in the organizer experience.
+- R10. A seeded room can be unlimited or have a maximum capacity of at least two, and the configuration always contains at least one unlimited room.
+- R11. Before reveal, the organizer can see the joined participant count, read-only room configuration, and live provisional roster for every room.
 
 **Launch and assignment**
 
-- R12. Launch is blocked when no rooms are configured or the configured capacity cannot hold every joined participant, with the shortfall explained to the organizer.
-- R13. Launch assigns every waiting participant exactly once, randomizes membership, and makes room sizes as even as possible without exceeding any room maximum.
-- R14. Each non-empty room receives one coordinator chosen randomly from its assigned participants.
-- R15. Launch makes room membership final and locks room configuration for the active gathering.
-- R16. A participant who joins after launch is assigned automatically to a currently smallest eligible room without changing that room's coordinator.
+- R12. Joining is blocked with a configuration error only when the seeded room invariant is broken; a valid configuration can always accept another participant because at least one room is unlimited.
+- R13. Assignment follows participant join order and seeded room order: place two participants into a room before advancing to the next room, then continue one participant per eligible room in round-robin order, dropping each finite room once it reaches capacity.
+- R14. At reveal, each non-empty room receives one coordinator chosen randomly from its already assigned participants.
+- R15. Launch reveals hidden assignments and makes every existing participant's room final without recalculating the waiting roster.
+- R16. A participant who joins after launch is assigned automatically to the first configured room among the currently smallest eligible rooms. Existing coordinators are preserved; if the selected room is empty, the late participant becomes its coordinator.
 
 **Organizer operation**
 
-- R17. The organizer experience is available at `/organizer` without authentication or a PIN.
-- R18. After launch, the organizer can expand each room to see member display names and the current coordinator but cannot see prayer requests.
-- R19. The organizer cannot remove participants, move participants between rooms, or correct assignments before or after launch.
+- R17. The organizer experience is available at `/admin` without authentication or a PIN; `/organizer` is not retained as a compatibility route.
+- R18. Before reveal, the organizer can inspect live provisional rosters; after reveal, the organizer also sees each current coordinator, and neither view exposes prayer requests.
+- R19. The organizer cannot create, edit, or delete rooms, remove participants, move participants between rooms, or correct assignments before or after reveal.
 
 **Coordinator resilience and room handoff**
 
 - R20. Every room member sees the current coordinator's name on the room-handoff screen.
 - R21. Any room member can take over as coordinator after confirming the action, and the new coordinator becomes visible to every room member without approval from the previous coordinator.
-- R22. After assignment, each participant sees the room name, wayfinding description, fellow members, coordinator, and a clear instruction to gather there.
+- R22. After reveal, each participant sees the room name, wayfinding description, fellow members, coordinator, and a clear instruction to gather there.
 - R23. The participant experience stops at room handoff and does not present prayer requests or the guided prayer journey.
 
 **Reset and event readiness**
@@ -127,15 +131,16 @@ The following breakdown is the current understanding, not a committed roadmap:
 ```mermaid
 flowchart TB
   Link["Open shared link"] --> Join["Enter name and optional request"]
-  Join --> Lobby["Wait in gathering lobby"]
-  Setup["Organizer configures rooms and capacities"] --> Launch{"Launch assignment"}
+  Seed["Seed immutable rooms"] --> Join
+  Join --> Assign["Assign immediately in deterministic room order"]
+  Assign --> Organizer["Organizer sees live provisional rosters"]
+  Assign --> Lobby["Participant waits without room details"]
+  Organizer --> Launch{"Launch reveal"}
   Lobby --> Launch
   Lobby -.-> Reset
-  Launch -->|capacity valid| Assign["Balanced randomized assignment"]
-  Launch -->|capacity invalid| Block["Explain launch blocker"]
-  Assign --> Coordinator["Random coordinator selected per non-empty room"]
+  Launch --> Coordinator["Random coordinator selected per non-empty room"]
   Coordinator --> Handoff["Everyone sees room, members, and coordinator"]
-  Late["Participant joins after launch"] --> Eligible["Smallest eligible room"]
+  Late["Participant joins after reveal"] --> Eligible["First configured smallest eligible room"]
   Eligible --> Handoff
   Handoff --> Takeover{"Member takes over?"}
   Takeover -->|confirmed| Handoff
@@ -150,17 +155,17 @@ flowchart TB
   - **Actors:** A1
   - **Steps:** A new participant enters a name and optional request, while a remembered participant returns to their current gathering state.
   - **Outcome:** The participant reaches the lobby or assigned room without an account.
-  - **Covers:** R1, R2, R3, R4, R5, R6, R8.
+  - **Covers:** R1, R2, R3, R4, R5, R6, R7, R8, R13.
 
-- F2. Organizer prepares and launches the gathering
-  - **Trigger:** The organizer opens `/organizer` before assignment.
+- F2. Organizer monitors and reveals the gathering
+  - **Trigger:** The organizer opens `/admin` while participants are joining.
   - **Actors:** A3
-  - **Steps:** The organizer configures rooms and capacities, reviews the joined count, and confirms launch.
-  - **Outcome:** Every waiting participant receives one valid room and every non-empty room receives one coordinator.
+  - **Steps:** The organizer reviews read-only room configuration and live provisional rosters, then confirms reveal.
+  - **Outcome:** Existing room membership is revealed unchanged and every non-empty room receives one coordinator.
   - **Covers:** R9, R10, R11, R12, R13, R14, R15, R17.
 
 - F3. Participant receives the room handoff
-  - **Trigger:** Assignment becomes available.
+  - **Trigger:** The organizer launches the reveal.
   - **Actors:** A1, A2
   - **Steps:** The lobby transitions to the room-handoff screen, where each member sees the same room identity, membership, coordinator, and directions.
   - **Outcome:** Participants can find the room and recognize their group without organizer intervention.
@@ -169,8 +174,8 @@ flowchart TB
 - F4. Late participant joins
   - **Trigger:** A new participant submits the join form after launch.
   - **Actors:** A1
-  - **Steps:** The gathering selects a currently smallest room with remaining capacity and assigns the participant.
-  - **Outcome:** The participant receives a room immediately without changing any existing assignment or coordinator.
+  - **Steps:** The gathering selects the first configured room among the currently smallest rooms with remaining capacity and assigns the participant, making them coordinator only when that room was empty.
+  - **Outcome:** The participant receives a room immediately without changing any existing assignment or existing coordinator.
   - **Covers:** R13, R15, R16.
 
 - F5. A member takes over coordination
@@ -181,7 +186,7 @@ flowchart TB
   - **Covers:** R20, R21.
 
 - F6. Organizer monitors or resets the gathering
-  - **Trigger:** Assignment has launched or the team needs a fresh run.
+  - **Trigger:** Participants are joining, assignments have been revealed, or the team needs a fresh run.
   - **Actors:** A3
   - **Steps:** The organizer reviews expandable room rosters or confirms reset through a standard dialog.
   - **Outcome:** Monitoring exposes no prayer requests, while reset retains room setup and returns participants to joining.
@@ -191,27 +196,29 @@ flowchart TB
 
 - AE1. Participant returns during the lobby
   - **Covers:** R4, R6, R8.
-  - **Given:** A participant has joined on a device and assignment has not launched.
+  - **Given:** A participant has joined, received a hidden assignment, and the reveal has not launched.
   - **When:** They reload the page or reopen the shared link on that device.
   - **Then:** They return to the lobby as the same participant without entering their name again.
 
-- AE2. Organizer assigns 37 participants across six unlimited rooms
+- AE2. Thirty-seven participants are assigned before reveal
   - **Covers:** R11, R13, R14.
-  - **Given:** Thirty-seven participants are waiting and six rooms are configured without maximum capacities.
-  - **When:** The organizer launches assignment.
-  - **Then:** Every participant receives exactly one room, room sizes differ by no more than one, and every non-empty room receives exactly one coordinator.
+  - **Given:** Six seeded rooms are unlimited.
+  - **When:** Thirty-seven participants join in sequence.
+  - **Then:** Every participant immediately receives exactly one hidden room, the organizer sees sizes seven, six, six, six, six, and six in configured order, and participants remain in the lobby until reveal.
+  - **When:** The organizer launches the reveal.
+  - **Then:** Membership remains unchanged, participants see their rooms, and every non-empty room receives exactly one coordinator.
 
-- AE3. A room maximum constrains balancing
+- AE3. A finite room falls out of round robin
   - **Covers:** R10, R13.
-  - **Given:** Twelve participants are waiting across three rooms, one room has a maximum of two, and two rooms are unlimited.
-  - **When:** The organizer launches assignment.
-  - **Then:** The capped room receives two participants and the other rooms receive five participants each.
+  - **Given:** Three rooms are seeded in order with capacities two, unlimited, and unlimited.
+  - **When:** Twelve participants join in sequence.
+  - **Then:** The capped room receives the first two participants and then falls out, while the other rooms receive five participants each.
 
 - AE4. Participant joins after launch
   - **Covers:** R15, R16.
-  - **Given:** Assignment has launched and at least one room can accept another participant.
+  - **Given:** Assignments have been revealed and the seeded configuration includes an unlimited room.
   - **When:** A new participant joins.
-  - **Then:** They enter a currently smallest eligible room without moving another participant or replacing its coordinator.
+  - **Then:** They enter the first configured room among the currently smallest eligible rooms without moving another participant or replacing an existing coordinator; if that room was empty, they become its coordinator.
 
 - AE5. Coordinator does not arrive
   - **Covers:** R20, R21.
@@ -219,11 +226,13 @@ flowchart TB
   - **When:** Another member confirms coordinator takeover.
   - **Then:** That member becomes coordinator and every room member sees the updated name.
 
-- AE6. Organizer reviews rooms after launch
+- AE6. Organizer reviews rooms before and after reveal
   - **Covers:** R3, R18, R19.
   - **Given:** Participants have been assigned and some submitted prayer requests.
-  - **When:** The organizer expands a room.
-  - **Then:** They see participant names and the current coordinator but no prayer-request content or assignment controls.
+  - **When:** The organizer expands a room before reveal.
+  - **Then:** They see provisionally assigned participant names but no coordinator, prayer-request content, or assignment controls.
+  - **When:** The organizer expands the same room after reveal.
+  - **Then:** They also see the current coordinator without any room or participant mutation controls.
 
 - AE7. Organizer resets after a load test
   - **Covers:** R24, R25, R26.
@@ -234,7 +243,7 @@ flowchart TB
 ### Success Criteria
 
 - A first-time participant can understand whether to join, wait, or move to a room from the primary message and action on each screen.
-- Every joined participant has exactly one room, no room exceeds its maximum, and unconstrained room sizes differ by no more than one.
+- Every joined participant immediately has exactly one hidden room, the first two seats of each room fill in configured order, and no room exceeds its maximum.
 - Organizer, lobby, and room-handoff views converge on the current gathering state without participants manually refreshing.
 - Same-device participants recover their current state after an ordinary reload or transient disconnect.
 - A 50-participant load run completes joining, launch, room reveal, coordinator takeover, late arrival, and reset without lost or contradictory state.
@@ -248,14 +257,14 @@ flowchart TB
 - Organizer authentication and access control are intentionally outside this release.
 - Participant accounts, cross-device recovery, participant removal, manual room moves, and post-launch assignment correction are outside this release.
 - Multiple simultaneous gatherings, event history, messaging, notifications, analytics, and post-event follow-up are outside this release.
-- Room setup is operational configuration rather than a general venue-management product.
+- Room setup is seed-controlled operational configuration rather than a general venue-management product.
 
 ### Dependencies and Assumptions
 
 - Participants have access to a modern mobile browser and remain within reasonable network coverage at the venue.
-- The organizer knows the available room names, wayfinding descriptions, and any capacity limits before launch.
+- Seeded room data supplies the available names, wayfinding descriptions, and capacities before participants join.
 - One shared event link is distributed through an out-of-band channel such as a message or projected QR code.
-- The team accepts that anyone who discovers `/organizer` can view names, launch assignment, or reset the gathering.
+- The team accepts that anyone who discovers `/admin` can view names, reveal assignments, or reset the gathering.
 - Duplicate or accidental joins remain in the assignment pool until the organizer resets the entire gathering.
 - At least one configured room always remains unlimited, so a valid late arrival has an eligible room.
 - Planning will reconcile `CONTEXT.md` and `docs/prayer-activity-spec.md` with this confirmed product direction before implementation.
@@ -270,18 +279,18 @@ flowchart TB
 
 ## Planning Contract
 
-**Product Contract preservation:** Product Contract unchanged.
+**Product Contract preservation:** changed R6–R19 and related flows and acceptance examples to capture immediate hidden assignment, deterministic two-seat seeding followed by round robin, immutable seeded rooms, live organizer rosters, reveal-only launch, and the `/admin` route.
 
 ### Key Technical Decisions
 
-- KTD1. **Store one active gathering in PostgreSQL through Prisma.** A singleton gathering state owns the forming/assigned phase and revision, rooms persist as reusable configuration, and participants carry per-run state. This extends the model-free connection established in `src/lib/db.ts` and `prisma/schema.prisma`. Governs R3, R8, R9, R10, R15, R25.
-- KTD2. **Use App Router Route Handlers as the browser mutation and snapshot boundary.** Server-rendered pages provide the initial state, while no-store audience-specific handlers support joins, polling, room management, launch, takeover, and reset without introducing a second service. Same-origin checks protect state-changing requests from cross-site submission. (session-settled: user-directed — chosen over treating the Stitch export as a client-only prototype: the user asked for a production Next.js App Router implementation.) Governs R1, R7, R17, R24.
+- KTD1. **Store one active gathering in PostgreSQL through Prisma.** A singleton gathering state owns the forming/assigned phase and revision, seeded rooms persist as immutable reusable configuration, and participants carry hidden per-run assignments. This extends the existing room-handoff schema in `prisma/schema.prisma`. Governs R3, R7, R8, R9, R10, R15, R25.
+- KTD2. **Use App Router Route Handlers as the browser mutation and snapshot boundary.** Server-rendered pages provide the initial state, while no-store audience-specific handlers support joins, polling, reveal, takeover, and reset without exposing room mutation endpoints or introducing a second service. Same-origin checks protect state-changing requests from cross-site submission. (session-settled: user-directed — chosen over treating the Stitch export as a client-only prototype: the user asked for a production Next.js App Router implementation.) Governs R1, R7, R9, R17, R24.
 - KTD3. **Represent same-device identity with an opaque HttpOnly cookie.** The browser holds a high-entropy token while PostgreSQL stores only its digest, so URLs and client-visible data do not become participant credentials. (session-settled: user-directed — chosen over accounts or recovery codes: device changes can be handled manually for this event.) Governs R1, R4, R5.
-- KTD4. **Synchronize by polling authoritative snapshots rather than keeping process-local live state.** A shared client hook polls every second while the page is visible, backs off after failures, and redirects when the gathering phase or participant assignment changes. This remains correct across Railway restarts and avoids a premature WebSocket or pub/sub dependency for the room-handoff boundary and 50-participant target; transport for a later guided room experience remains a separate decision. Governs R6, R7, R8, R16, R18, R20, R21, R26, R27.
-- KTD5. **Serialize lifecycle mutations in PostgreSQL.** Launch, late joins, takeover, room edits, and reset run through a domain service using atomic transactions under a row lock on the active gathering, with bounded retry for database write conflicts, so concurrent requests converge on one assignment and coordinator state. Governs R10, R12, R13, R14, R15, R16, R19, R21, R24, R25.
-- KTD6. **Build separate participant and organizer projections.** Shared domain state is mapped through explicit response serializers, organizer queries never select prayer-request content, and request values are excluded from application logs and error details. Governs R3, R18, R22, R23.
+- KTD4. **Synchronize by polling authoritative snapshots rather than keeping process-local live state.** A shared client hook polls every second while the page is visible, backs off after failures, keeps hidden assignments in lobby state, and redirects when the gathering phase reveals a participant's room. This remains correct across Railway restarts and avoids a premature WebSocket or pub/sub dependency for the room-handoff boundary and 50-participant target; transport for a later guided room experience remains a separate decision. Governs R6, R7, R8, R15, R16, R18, R20, R21, R26, R27.
+- KTD5. **Serialize lifecycle mutations in PostgreSQL.** Joins, reveal, late joins, takeover, and reset run through a domain service using atomic transactions under a row lock on the active gathering, with bounded retry for database write conflicts, so concurrent requests converge on one deterministic assignment and coordinator state. Seeded room order is the existing creation-time order with ID as a stable tie-break; fill the first room below two, then choose the first smallest eligible room, so no cursor state is required. (session-settled: user-directed — chosen over a randomized batch allocator or persisted round-robin cursor: immutable room order and append-only joins make the deterministic next room derivable.) Governs R7, R10, R12, R13, R14, R15, R16, R21, R24, R25.
+- KTD6. **Build separate participant and organizer projections.** Shared domain state is mapped through explicit response serializers, participant projections suppress room details while forming, organizer queries expose provisional rosters but never select prayer-request content, and request values are excluded from application logs and error details. Governs R3, R6, R11, R18, R22, R23.
 - KTD7. **Retain the Stitch composition through shared Tailwind components.** Existing participant and organizer surfaces become data-driven while common status, room, member, modal, and action primitives prevent repeated page-specific behavior. (session-settled: user-directed — chosen over duplicating the exported screens page by page: the user asked for DRY components and Tailwind.) Governs R6, R11, R18, R20, R22, R23.
-- KTD8. **Prove event scale through a repeatable HTTP load scenario.** A guarded script exercises 50 concurrent joins, launch, room reveal, takeover, late arrival, and reset against a dedicated test deployment or local server. Governs R27.
+- KTD8. **Prove event scale through a repeatable HTTP load scenario.** A guarded script uses the existing seeded room configuration and exercises 50 concurrent joins, live provisional rosters, reveal, room handoff, takeover, late arrival, and reset against a dedicated test deployment or local server. Governs R27.
 - KTD9. **Apply committed migrations in Railway's pre-deploy phase.** `prisma migrate deploy` runs with the deployed image and private-network database variables before a new application instance starts, so an unapplied schema blocks deployment instead of failing live requests. Governs R8.
 - KTD10. **Separate fast tests from PostgreSQL integration tests.** Vitest keeps node and browser-component projects in the normal verification path, while explicitly named integration tests run after migrations against PostgreSQL in CI and local database verification. This preserves a useful local `pnpm verify` while still proving transaction behavior. Governs R8, R27.
 - KTD11. **Encrypt personal prayer requests before persistence.** An authenticated-encryption helper uses an environment-provided key, stores only ciphertext and its encryption metadata, and decrypts only through the future participant-room projection boundary. Submitting a request fails safely when the key is unavailable, while participants without a request can still join. Governs R2, R3.
@@ -291,9 +300,9 @@ flowchart TB
 ```mermaid
 flowchart TB
   Participant["Participant browser"] --> ParticipantPages["Server-rendered join, lobby, and room pages"]
-  Organizer["Organizer browser"] --> OrganizerPage["Server-rendered organizer page"]
+  Organizer["Organizer browser"] --> OrganizerPage["Server-rendered /admin page"]
   ParticipantPages --> ParticipantAPI["Participant snapshot and mutation handlers"]
-  OrganizerPage --> OrganizerAPI["Organizer snapshot and mutation handlers"]
+  OrganizerPage --> OrganizerAPI["Organizer snapshot and reveal/reset handlers"]
   ParticipantAPI --> Domain["Gathering domain service"]
   OrganizerAPI --> Domain
   Domain --> Prisma["Prisma client"]
@@ -305,8 +314,8 @@ flowchart TB
 ```mermaid
 stateDiagram-v2
   [*] --> Forming
-  Forming --> Forming: participant joins or room setup changes
-  Forming --> Assigned: organizer confirms valid launch
+  Forming --> Forming: participant joins and receives hidden assignment
+  Forming --> Assigned: organizer confirms reveal
   Assigned --> Assigned: late join or coordinator takeover
   Assigned --> Forming: organizer confirms reset
   Forming --> Forming: organizer confirms reset
@@ -315,10 +324,10 @@ stateDiagram-v2
 ### Sequencing
 
 1. Align domain authority and establish the persistent lifecycle model.
-2. Implement transactional gathering behavior before exposing HTTP mutations.
+2. Implement transactional immediate assignment and reveal behavior before exposing HTTP mutations.
 3. Add audience-specific Route Handlers and participant identity.
 4. Replace demo participant surfaces with persistent synchronized state.
-5. Replace demo organizer state with production setup, launch, monitoring, and reset.
+5. Replace organizer room mutation controls with the read-only `/admin` monitoring, reveal, and reset experience.
 6. Prove the complete system with database, browser, and 50-participant load checks.
 
 ### System-Wide Impact
@@ -327,16 +336,17 @@ stateDiagram-v2
 - **Privacy:** Participant identity is device-bound and prayer requests are excluded from organizer reads, logs, browser URLs, and load-test output.
 - **Concurrency:** Every assignment-affecting mutation shares one serialized lifecycle boundary rather than relying on React or process memory.
 - **Deployment:** The existing single Next.js Railway service and PostgreSQL plugin remain sufficient; no new hosted service is introduced.
-- **Operations:** `/organizer` stays intentionally open, so the UI must make launch and reset consequences clear without implying access control.
+- **Operations:** `/admin` stays intentionally open, so the UI must make reveal and reset consequences clear without implying access control.
 
 ### Risks and Dependencies
 
-- **Concurrent writes:** Unit tests cannot prove PostgreSQL serialization, so U2 includes real-database launch and late-join tests with bounded retry assertions.
+- **Concurrent writes:** Unit tests cannot prove PostgreSQL serialization, so U2 includes real-database simultaneous-join, reveal, and late-join tests with bounded retry assertions.
 - **Polling load:** Hidden-page pausing, failure backoff, and the 50-participant run bound query volume while preserving automatic convergence.
 - **Prototype residue:** U4 and U5 remove hard-coded sample data and query-string identity while component/browser tests pin the accepted Stitch composition.
 - **Conflicting authority:** U1 updates `CONTEXT.md` and records the superseding decision in an ADR before the new behavior becomes implementation authority.
-- **Destructive testing:** U6 requires an explicit target and reset opt-in, and refuses the production origin by default.
-- **Migration failure:** KTD9 makes a failed migration stop Railway before the new instance starts; the first migration is additive because the current schema has no domain tables.
+- **Seed dependence:** U1 and U2 validate the room invariants at the domain boundary because the application deliberately offers no event-day repair controls.
+- **Destructive testing:** U6 requires an explicit target and reset opt-in, refuses the production origin by default, and never rewrites seeded room configuration.
+- **Migration failure:** The minimum-capacity constraint must validate existing seeded data before it is committed, and KTD9 makes a failed migration stop Railway before the new instance starts.
 - **Backup retention:** Reset deletes live application rows, but provider backups may follow a separate retention policy; operational documentation must not promise immediate backup erasure.
 - **Encryption-key loss or rotation:** Prayer requests cannot be recovered without the configured key, so U1 documents generation and rotation constraints and keeps ciphertext unreadable on decryption failure.
 
@@ -358,19 +368,20 @@ stateDiagram-v2
 
 ### U1. Establish the gathering persistence model and domain authority
 
-**Goal:** Introduce the persistent entities and documentation needed for one reusable room-handoff gathering.
+**Goal:** Preserve the persistent entities and enforce the seeded-room invariants needed for one reusable room-handoff gathering.
 
-**Requirements:** R2, R3, R8, R9, R10, R15, R25; KTD1, KTD11
+**Requirements:** R2, R3, R8, R9, R10, R12, R15, R25; KTD1, KTD11
 
 **Dependencies:** None
 
-**Files:** `prisma/schema.prisma`, `prisma/migrations/*/migration.sql`, `CONTEXT.md`, `docs/prayer-activity-spec.md`, `docs/adr/0002-room-handoff-gathering.md`, `src/lib/db.ts`, `src/lib/gathering/types.ts`, `src/lib/gathering/constants.ts`, `src/lib/gathering/prayer-request-crypto.ts`, `src/lib/gathering/prayer-request-crypto.test.ts`, `src/lib/gathering/persistence.test.ts`
+**Files:** `prisma/schema.prisma`, `prisma/migrations/*/migration.sql`, `CONTEXT.md`, `docs/adr/0002-room-handoff-state.md`, `src/lib/db.ts`, `src/lib/gathering/types.ts`, `src/lib/gathering/constants.ts`, `src/lib/gathering/prayer-request-crypto.ts`, `src/lib/gathering/prayer-request-crypto.test.ts`, `src/lib/gathering/persistence.test.ts`
 
 **Approach:**
 
-1. Model the active gathering phase and revision, reusable room configuration, per-run participants, assignments, and current room coordinator.
-2. Preserve optional personal requests as encrypted server-only participant data and define reset-compatible foreign-key behavior.
-3. Update the root domain context and add an ADR that names the room-handoff contract as the current authority over the historical pair-matching specification.
+1. Model the active gathering phase and revision, immutable seeded room configuration, per-run participants, hidden assignments, and current room coordinator.
+2. Enforce that finite room capacities are at least two while retaining the existing requirement for at least one unlimited room.
+3. Preserve optional personal requests as encrypted server-only participant data and define reset-compatible foreign-key behavior.
+4. Update the root domain context and ADR to describe immediate hidden assignment, immutable seeded rooms, and reveal-only launch.
 
 **Execution note:** Apply the migration to PostgreSQL and capture connection/migration evidence before building feature behavior on top of it.
 
@@ -378,17 +389,18 @@ stateDiagram-v2
 
 **Test scenarios:**
 
-1. A fresh database accepts the migration and can create the active gathering plus rooms and participants.
-2. Deleting a participant cannot leave an invalid coordinator reference.
-3. Clearing per-run participant data leaves room names, descriptions, and capacities intact.
-4. A participant row can hold an optional prayer request without any organizer projection being defined in the persistence layer.
-5. Prayer-request encryption round-trips with the configured key, rejects tampered ciphertext, and fails without exposing plaintext when the key is missing or wrong.
+1. A fresh database accepts the migration and can create the active gathering plus valid seeded rooms and participants.
+2. A finite room capacity below two is rejected by the persistence invariant.
+3. Deleting a participant cannot leave an invalid coordinator reference.
+4. Clearing per-run participant data leaves room names, descriptions, and capacities intact.
+5. A participant row can hold an optional prayer request without any organizer projection being defined in the persistence layer.
+6. Prayer-request encryption round-trips with the configured key, rejects tampered ciphertext, and fails without exposing plaintext when the key is missing or wrong.
 
 **Verification:** Prisma validates and generates, the migration applies to PostgreSQL, and persistence tests prove reset-compatible relationships.
 
-### U2. Implement assignment and gathering lifecycle behavior
+### U2. Implement immediate deterministic assignment and reveal behavior
 
-**Goal:** Make join, room configuration, launch, late arrival, coordinator takeover, and reset one transactional domain.
+**Goal:** Make immediate hidden assignment, reveal, late arrival, coordinator takeover, and reset one transactional domain.
 
 **Requirements:** R2, R9, R10, R11, R12, R13, R14, R15, R16, R19, R21, R24, R25; F2, F4, F5, F6; AE2, AE3, AE4, AE5, AE7; KTD5
 
@@ -398,9 +410,10 @@ stateDiagram-v2
 
 **Approach:**
 
-1. Keep the capacity-aware balancing algorithm pure and inject its random ordering so edge cases remain deterministic in tests.
-2. Put lifecycle reads and writes behind one service that locks the active gathering, validates its phase, commits atomically, increments the revision, and retries bounded database write conflicts.
-3. Treat launch as final, late arrivals as new assignments into a smallest eligible room, and takeover as replacement of the room's single coordinator.
+1. Replace randomized batch balancing with a pure deterministic next-room selector that fills the first configured room below two, then chooses the first smallest eligible room and ignores rooms at capacity.
+2. Assign every participant inside the serialized join transaction, recording the room immediately without exposing it through the participant projection while forming.
+3. Make launch choose coordinators and reveal existing memberships without recalculating them; make late arrivals use the same deterministic smallest-eligible ordering and preserve existing coordinators.
+4. Remove room mutation operations from the event-day domain service.
 
 **Execution note:** Start with failing domain tests for AE2, AE3, AE4, AE5, and AE7, then add PostgreSQL-backed concurrency coverage.
 
@@ -408,14 +421,16 @@ stateDiagram-v2
 
 **Test scenarios:**
 
-1. Covers AE2. Thirty-seven participants across six unlimited rooms produce sizes that differ by no more than one and one coordinator per non-empty room.
-2. Covers AE3. Twelve participants with capacities two, unlimited, and unlimited produce room sizes two, five, and five.
-3. Launch with no rooms or insufficient total capacity returns a domain error without assigning any participant.
-4. Two concurrent launch attempts produce one committed assignment set.
-5. Covers AE4. Concurrent late joins each receive one eligible room without moving existing members or replacing a coordinator.
-6. Covers AE5. A member of the room can become its sole coordinator, while a participant from another room is rejected.
-7. Covers AE7. Reset clears run data and returns the gathering to forming while preserving room configuration.
-8. Room edits are rejected after launch, and the service exposes no participant-removal operation.
+1. Covers AE2. Thirty-seven sequential joins across six unlimited rooms produce configured-order sizes seven, six, six, six, six, and six before reveal.
+2. With three unlimited rooms and five joins, configured-order sizes are two, two, and one; with one join they are one, zero, and zero.
+3. Covers AE3. Twelve joins with capacities two, unlimited, and unlimited produce room sizes two, five, and five, and the finite room receives no participant after reaching two.
+4. A join against missing rooms, a finite capacity below two, or a configuration without an unlimited room returns a configuration error without creating an unassigned participant.
+5. Two concurrent joins serialize into distinct deterministic assignment slots.
+6. Two concurrent reveal attempts choose one committed coordinator set without moving any participant.
+7. Covers AE4. Concurrent late joins each receive the first configured room among the smallest eligible rooms without moving existing members or replacing a coordinator; a late join entering an empty room becomes its coordinator.
+8. Covers AE5. A member of the room can become its sole coordinator, while a participant from another room is rejected.
+9. Covers AE7. Reset clears run data and returns the gathering to forming while preserving seeded room configuration.
+10. The domain service exposes no room or participant mutation operation beyond joining, takeover, reveal, and reset.
 
 **Verification:** Pure tests prove balancing, PostgreSQL-backed service tests prove atomic lifecycle transitions, and every committed mutation advances the shared revision.
 
@@ -427,12 +442,12 @@ stateDiagram-v2
 
 **Dependencies:** U2
 
-**Files:** `src/lib/gathering/session.ts`, `src/lib/gathering/session.test.ts`, `src/lib/gathering/projections.ts`, `src/lib/gathering/projections.test.ts`, `src/lib/gathering/http.ts`, `src/app/api/participant/route.ts`, `src/app/api/coordinator/route.ts`, `src/app/api/organizer/route.ts`, `src/app/api/organizer/rooms/route.ts`, `src/app/api/organizer/launch/route.ts`, `src/app/api/organizer/reset/route.ts`, `src/app/api/gathering-routes.test.ts`, `src/test/setup.ts`, `vitest.config.ts`, `package.json`, `pnpm-lock.yaml`
+**Files:** `src/lib/gathering/session.ts`, `src/lib/gathering/session.test.ts`, `src/lib/gathering/types.ts`, `src/lib/gathering/http.ts`, `src/app/api/participant/route.ts`, `src/app/api/participant/coordinator/route.ts`, `src/app/api/organizer/route.ts`, `src/app/api/organizer/launch/route.ts`, `src/app/api/organizer/reset/route.ts`, `src/app/api/gathering-routes.test.ts`, `src/test/setup.ts`, `vitest.config.ts`, `package.json`, `pnpm-lock.yaml`
 
 **Approach:**
 
 1. Create and resolve a high-entropy participant token through an HttpOnly, same-site cookie while storing only its digest.
-2. Return participant and organizer snapshots through separate projection functions, with prayer-request fields absent from organizer selects, response types, and diagnostic output.
+2. Return participant and organizer snapshots through separate projections: forming participants receive lobby state despite having a stored room, while the organizer receives live provisional rosters with prayer-request fields absent from selects, response types, and diagnostic output.
 3. Validate expected input and same-origin mutations in shared HTTP helpers, then map domain errors to stable user-facing responses.
 4. Extend Vitest with a browser-like component project while keeping PostgreSQL integration tests behind an explicit database-backed command.
 
@@ -447,8 +462,8 @@ stateDiagram-v2
 3. A name containing only whitespace is rejected, while internal whitespace is normalized.
 4. Empty, malformed, and oversized payloads are rejected without changing gathering state.
 5. A cross-origin mutation request is rejected without changing gathering state.
-6. Covers AE6. Organizer snapshots include names, rooms, counts, and coordinator identity but contain no prayer-request key or submitted request value.
-7. Participant snapshots expose only the viewer's current lobby or room-handoff data.
+6. Covers AE6. Organizer snapshots include names, rooms, counts, provisional membership, and post-reveal coordinator identity but contain no prayer-request key or submitted request value.
+7. A forming participant with a stored room receives only lobby state; the same participant receives room-handoff data after reveal.
 8. Domain conflicts and validation failures return expected errors without credentials, raw database details, or prayer content.
 9. Server logs and structured errors contain no prayer-request values or participant session tokens.
 10. Snapshot responses opt out of browser and framework caching.
@@ -468,7 +483,7 @@ stateDiagram-v2
 **Approach:**
 
 1. Resolve the participant cookie in Server Components and render the correct initial join, lobby, or room state without query-string identity.
-2. Centralize visible-page polling, retry, revision comparison, and reset/launch navigation in one reusable hook.
+2. Centralize visible-page polling, retry, revision comparison, and reset/reveal navigation in one reusable hook.
 3. Keep the Stitch-derived join, lobby, room reveal, roster, coordinator label, and takeover confirmation composition while replacing sample data with typed snapshots.
 4. Remove development preview links and the demo gathering module once production paths cover each screen.
 
@@ -480,7 +495,7 @@ stateDiagram-v2
 
 1. A new device sees the join form and can submit a normalized name with or without a prayer request.
 2. Covers AE1. A remembered participant returns directly to their current lobby or assigned room.
-3. The lobby displays the live joined count and moves to the room handoff after launch without manual refresh.
+3. The lobby displays the live joined count without leaking the stored assignment, then moves to the room handoff after reveal without manual refresh.
 4. The room handoff displays the assigned room, directions, complete roster, and current coordinator without prayer content or guided-stage controls.
 5. Covers AE5. Confirming takeover updates the current coordinator for all polling room members.
 6. After reset, a connected lobby or room screen returns to the join state.
@@ -489,22 +504,23 @@ stateDiagram-v2
 
 **Verification:** Participant component tests pass, browser acceptance covers join through room handoff on mobile dimensions, and no production route contains preview navigation.
 
-### U5. Connect the Stitch organizer experience to live operations
+### U5. Make `/admin` a read-only room monitor with reveal controls
 
-**Goal:** Replace the organizer demo with room configuration, capacity validation, launch, roster monitoring, and reset against the shared gathering.
+**Goal:** Move the organizer experience to `/admin`, remove event-day room mutation, and show live rosters, reveal, and reset against the shared gathering.
 
 **Requirements:** R9, R10, R11, R12, R15, R17, R18, R19, R24, R25, R27; F2, F6; AE2, AE3, AE6, AE7; KTD4, KTD7
 
 **Dependencies:** U3
 
-**Files:** `src/app/organizer/page.tsx`, `src/components/organizer/organizer-dashboard.tsx`, `src/components/organizer/room-editor.tsx`, `src/components/organizer/room-roster.tsx`, `src/components/organizer/organizer-dashboard.test.tsx`, `src/hooks/use-gathering-snapshot.ts`
+**Files:** `src/app/admin/page.tsx`, `src/components/organizer/organizer-dashboard.tsx`, `src/components/organizer/organizer-dashboard.test.tsx`, `src/hooks/use-gathering-snapshot.ts`
 
 **Approach:**
 
-1. Server-render the initial organizer snapshot and reuse the shared polling hook for joined count, launch, takeover, late-arrival, and reset changes.
-2. Make room name, directions, and optional maximum editable only while forming, while preserving one unlimited room.
-3. Replace launch controls with expandable room rosters after assignment and expose no move, removal, or prayer-request affordance.
-4. Add a standard reset confirmation that preserves room configuration and announces the destructive run-data effect.
+1. Server-render the initial organizer snapshot at `/admin` and reuse the shared polling hook for joined count, provisional assignments, reveal, takeover, late-arrival, and reset changes.
+2. Render seeded room name, directions, maximum, and live roster as read-only in both gathering phases.
+3. Remove room create, edit, and delete controls and their API client calls; do not retain `/organizer` as a compatibility route.
+4. Reveal coordinator labels after launch while exposing no move, participant removal, or prayer-request affordance.
+5. Retain the standard reset confirmation that preserves seeded room configuration and announces the destructive run-data effect.
 
 **Execution note:** Protect the organizer response shape and disabled-state rules with component tests before integrating browser mutations.
 
@@ -512,20 +528,20 @@ stateDiagram-v2
 
 **Test scenarios:**
 
-1. The forming organizer can add, rename, describe, cap, uncap, and remove rooms while any non-empty configuration retains at least one unlimited room.
-2. Launch is disabled with no rooms or insufficient capacity and explains the blocking condition.
-3. Covers AE2 and AE3. A valid launch confirmation produces balanced room counts and coordinator labels.
-4. Covers AE6. Assigned room cards expand to show display names and current coordinator without prayer content or assignment controls.
+1. `/admin` renders each seeded room and capacity without any create, edit, or delete control, while `/organizer` is absent.
+2. Covers AE2 and AE3. Before reveal, room cards show live deterministic rosters as participants join.
+3. Reveal leaves membership unchanged and adds coordinator labels to non-empty rooms.
+4. Covers AE6. Room cards expose display names and current coordinator when applicable without prayer content or assignment controls.
 5. Late arrivals and coordinator takeover appear through polling without a page reload.
-6. Covers AE7. Standard reset confirmation clears run data, retains room setup, and returns the dashboard to forming.
-7. No organizer credential, PIN, participant removal, or room-move control is rendered.
-8. Empty-room, validation-error, mutation-failure, and reconnecting states preserve the organizer's last valid snapshot and explain the available recovery action.
+6. Covers AE7. Standard reset confirmation clears run data, retains seeded rooms, and returns the dashboard to forming.
+7. No organizer credential, PIN, room mutation, participant removal, or room-move control is rendered.
+8. Empty-room, configuration-error, mutation-failure, and reconnecting states preserve the organizer's last valid snapshot and explain the available recovery action.
 
 **Verification:** Organizer component tests and desktop/tablet browser acceptance cover setup, launch, monitoring, and reset.
 
 ### U6. Prove database, load, and deployment readiness
 
-**Goal:** Add repeatable evidence that the production-shaped experience works with PostgreSQL and 50 concurrent participants.
+**Goal:** Add repeatable evidence that immediate hidden assignment and reveal work with seeded rooms, PostgreSQL, and 50 concurrent participants.
 
 **Requirements:** R3, R8, R27; all Success Criteria; KTD8, KTD9, KTD10, KTD11
 
@@ -536,10 +552,11 @@ stateDiagram-v2
 **Approach:**
 
 1. Add a guarded load script that requires an explicit base URL and destructive-reset opt-in.
-2. Drive 50 independent cookie jars through join, launch, room-state convergence, takeover, late arrival, and reset while recording failures without prayer content.
-3. Run migrations and PostgreSQL integration tests in CI before the production build is treated as ready.
-4. Configure Railway to apply committed Prisma migrations during pre-deploy without changing the current start or health-check contract.
-5. Document local PostgreSQL migration, encryption-key setup, verification, event setup, load-test, reset retention limits, and Railway environment expectations.
+2. Drive 50 independent cookie jars through immediate assignment, organizer roster convergence, reveal, room-state convergence, takeover, late arrival, and reset while recording failures without prayer content.
+3. Use the target's existing seeded rooms and restore only gathering run state; never create, edit, delete, or replace room configuration.
+4. Run migrations and PostgreSQL integration tests in CI before the production build is treated as ready.
+5. Configure Railway to apply committed Prisma migrations during pre-deploy without changing the current start or health-check contract.
+6. Document local PostgreSQL migration, encryption-key setup, seeded-room invariants, verification, load-test, reset retention limits, and Railway environment expectations.
 
 **Execution note:** Run the load scenario only against a dedicated local or test environment and capture the result alongside `pnpm verify` and `pnpm db:check`.
 
@@ -548,12 +565,13 @@ stateDiagram-v2
 **Test scenarios:**
 
 1. The script refuses to start without an explicit target and destructive-reset opt-in.
-2. Fifty concurrent joins receive distinct participant cookies and all appear in the organizer count.
-3. Launch converges every participant on exactly one valid room with one coordinator per non-empty room.
+2. Fifty concurrent joins receive distinct participant cookies, immediate valid assignments, and all appear in organizer rosters while participant snapshots remain in lobby state.
+3. Reveal changes no membership and converges every participant on exactly one visible room with one coordinator per non-empty room.
 4. Takeover, one late join, and reset converge across participant and organizer snapshots.
 5. Script logs contain no prayer-request values or participant session tokens.
 6. Build and database checks pass against the migrated schema.
-7. A failed pre-deploy migration prevents the new Railway instance from starting.
+7. The script makes no room-configuration mutation request.
+8. A failed pre-deploy migration prevents the new Railway instance from starting.
 
 **Verification:** The guarded 50-participant scenario passes, PostgreSQL checks pass, and the Railway standalone build remains healthy.
 
@@ -568,19 +586,19 @@ stateDiagram-v2
 | `pnpm test`                       | U1–U6      | Pure domain, route, hook, component, privacy, and guard tests pass without requiring PostgreSQL.            |
 | `pnpm test:integration`           | U1, U2, U6 | Migrated PostgreSQL passes lifecycle and concurrency integration tests.                                     |
 | `pnpm verify`                     | U1–U6      | Formatting, lint, types, fast tests, Prisma validation, and production build all pass.                      |
-| Guarded 50-participant load run   | U2–U6      | Join, launch, reveal, takeover, late arrival, and reset converge without lost or contradictory state.       |
+| Guarded 50-participant load run   | U2–U6      | Immediate hidden assignment, live organizer rosters, reveal, takeover, late arrival, and reset converge.    |
 | Browser acceptance                | U4, U5     | Mobile participant and desktop/tablet organizer flows match the Stitch composition and production behavior. |
 
 ---
 
 ## Definition of Done
 
-- U1 is done when the migration and updated domain authorities establish one active gathering with reusable room configuration and reset-safe participant relationships.
-- U2 is done when transactional tests cover launch, capacity balancing, late arrival, takeover, phase locks, and reset under concurrent requests.
-- U3 is done when same-device identity works through an opaque cookie and no organizer response can contain prayer-request data.
-- U4 is done when the participant journey uses live persistent state, automatically transitions, preserves the Stitch experience, and contains no demo/query-string identity path.
-- U5 is done when `/organizer` performs the confirmed setup, launch, roster, and reset behavior without authentication, participant edits, or prayer visibility.
-- U6 is done when the guarded 50-participant scenario, PostgreSQL checks, browser acceptance, and `pnpm verify` pass.
+- U1 is done when the migration and updated domain authorities enforce immutable seeded rooms, minimum finite capacity two, one unlimited room, and reset-safe participant relationships.
+- U2 is done when transactional tests cover deterministic immediate assignment, two-person room seeding, capacity drop-out, reveal without reassignment, late arrival, takeover, and reset under concurrent requests.
+- U3 is done when same-device identity works through an opaque cookie, forming participants cannot see stored assignments, and organizer responses expose rosters without prayer-request data.
+- U4 is done when the participant journey waits on hidden assignment, reveals automatically, preserves the Stitch experience, and contains no demo/query-string identity path.
+- U5 is done when `/admin` performs the confirmed read-only roster, reveal, and reset behavior without room mutation, authentication, participant edits, or prayer visibility, and `/organizer` is absent.
+- U6 is done when the guarded seeded-room 50-participant scenario, PostgreSQL checks, browser acceptance, and `pnpm verify` pass.
 - The plan is complete only when every applicable R/F/AE/KTD is covered by an implementation unit and verification evidence.
 - Abandoned prototype branches, duplicated demo state, unused helpers, and experimental code are removed from the final diff.
 - Domain documentation, environment examples, and event-operation instructions describe the shipped behavior.

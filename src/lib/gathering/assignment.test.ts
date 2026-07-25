@@ -1,69 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  assignParticipantsToRooms,
   chooseCoordinator,
+  pickNextRoom,
   pickSmallestEligibleRoom,
+  validateRoomConfiguration,
 } from "@/lib/gathering/assignment";
 
 const stableRandom = () => 0.25;
-
-describe("assignParticipantsToRooms", () => {
-  it("balances 37 participants across six unlimited rooms", () => {
-    const result = assignParticipantsToRooms(
-      Array.from({ length: 37 }, (_, index) => `p-${index}`),
-      Array.from({ length: 6 }, (_, index) => ({
-        id: `room-${index}`,
-        maxCapacity: null,
-      })),
-      stableRandom,
-    );
-
-    expect(
-      [...result.values()].map((members) => members.length).sort(),
-    ).toEqual([6, 6, 6, 6, 6, 7]);
-  });
-
-  it("respects caps while balancing eligible rooms", () => {
-    const result = assignParticipantsToRooms(
-      Array.from({ length: 12 }, (_, index) => `p-${index}`),
-      [
-        { id: "small", maxCapacity: 2 },
-        { id: "open-a", maxCapacity: null },
-        { id: "open-b", maxCapacity: null },
-      ],
-      stableRandom,
-    );
-
-    expect(result.get("small")).toHaveLength(2);
-    expect(result.get("open-a")).toHaveLength(5);
-    expect(result.get("open-b")).toHaveLength(5);
-  });
-
-  it("rejects insufficient capacity without partial assignments", () => {
-    expect(() =>
-      assignParticipantsToRooms(
-        ["p-1", "p-2", "p-3"],
-        [
-          { id: "a", maxCapacity: 1 },
-          { id: "b", maxCapacity: 1 },
-        ],
-        stableRandom,
-      ),
-    ).toThrow("capacity");
-  });
-
-  it("rejects assignment when no rooms exist", () => {
-    expect(() => assignParticipantsToRooms(["p-1"], [], stableRandom)).toThrow(
-      "room",
-    );
-  });
-
-  it("requires a room even when nobody has joined yet", () => {
-    expect(() => assignParticipantsToRooms([], [], stableRandom)).toThrow(
-      "room",
-    );
-  });
-});
 
 describe("chooseCoordinator", () => {
   it("chooses one member from the room", () => {
@@ -75,25 +18,137 @@ describe("chooseCoordinator", () => {
   });
 });
 
-describe("pickSmallestEligibleRoom", () => {
-  it("selects only among the smallest rooms with capacity", () => {
+describe("pickNextRoom", () => {
+  it("puts two participants in each room before ordinary round robin", () => {
+    const rooms = [
+      { id: "first", maxCapacity: null, participantCount: 0 },
+      { id: "second", maxCapacity: null, participantCount: 0 },
+      { id: "third", maxCapacity: null, participantCount: 0 },
+    ];
+    const selected: string[] = [];
+
+    for (let index = 0; index < 8; index += 1) {
+      const room = pickNextRoom(rooms);
+      if (!room) throw new Error("Expected an eligible room");
+      selected.push(room.id);
+      room.participantCount += 1;
+    }
+
+    expect(selected).toEqual([
+      "first",
+      "first",
+      "second",
+      "second",
+      "third",
+      "third",
+      "first",
+      "second",
+    ]);
+  });
+
+  it("drops a finite room when it reaches capacity", () => {
     expect(
-      pickSmallestEligibleRoom(
-        [
-          { id: "full", maxCapacity: 2, participantCount: 2 },
-          { id: "small", maxCapacity: null, participantCount: 1 },
-          { id: "large", maxCapacity: null, participantCount: 3 },
-        ],
-        stableRandom,
-      )?.id,
-    ).toBe("small");
+      pickNextRoom([
+        { id: "full", maxCapacity: 2, participantCount: 2 },
+        { id: "open-a", maxCapacity: null, participantCount: 4 },
+        { id: "open-b", maxCapacity: null, participantCount: 3 },
+      ])?.id,
+    ).toBe("open-b");
+  });
+
+  it("balances 37 participants across six unlimited rooms", () => {
+    const rooms = Array.from({ length: 6 }, (_, index) => ({
+      id: `room-${index + 1}`,
+      maxCapacity: null,
+      participantCount: 0,
+    }));
+
+    for (let index = 0; index < 37; index += 1) {
+      const room = pickNextRoom(rooms);
+      if (!room) throw new Error("Expected an eligible room");
+      room.participantCount += 1;
+    }
+
+    expect(rooms.map(({ participantCount }) => participantCount)).toEqual([
+      7, 6, 6, 6, 6, 6,
+    ]);
+  });
+
+  it("stops assigning to a finite room throughout round robin", () => {
+    const rooms = [
+      { id: "finite", maxCapacity: 2, participantCount: 0 },
+      { id: "open-a", maxCapacity: null, participantCount: 0 },
+      { id: "open-b", maxCapacity: null, participantCount: 0 },
+    ];
+
+    for (let index = 0; index < 12; index += 1) {
+      const room = pickNextRoom(rooms);
+      if (!room) throw new Error("Expected an eligible room");
+      room.participantCount += 1;
+    }
+
+    expect(rooms.map(({ participantCount }) => participantCount)).toEqual([
+      2, 5, 5,
+    ]);
   });
 
   it("returns null when every room is full", () => {
     expect(
-      pickSmallestEligibleRoom([
-        { id: "full", maxCapacity: 1, participantCount: 1 },
-      ]),
+      pickNextRoom([{ id: "full", maxCapacity: 2, participantCount: 2 }]),
     ).toBeNull();
+  });
+});
+
+describe("pickSmallestEligibleRoom", () => {
+  it("uses configured order only to break a smallest-room tie", () => {
+    expect(
+      pickSmallestEligibleRoom([
+        { id: "earlier-with-one", maxCapacity: null, participantCount: 1 },
+        { id: "later-empty", maxCapacity: null, participantCount: 0 },
+        { id: "full", maxCapacity: 2, participantCount: 2 },
+      ])?.id,
+    ).toBe("later-empty");
+
+    expect(
+      pickSmallestEligibleRoom([
+        { id: "first", maxCapacity: null, participantCount: 1 },
+        { id: "second", maxCapacity: null, participantCount: 1 },
+      ])?.id,
+    ).toBe("first");
+  });
+});
+
+describe("validateRoomConfiguration", () => {
+  it("requires at least one room", () => {
+    expect(() => validateRoomConfiguration([])).toThrow(
+      "At least one room is required for assignment.",
+    );
+  });
+
+  it("requires at least one unlimited room", () => {
+    expect(() =>
+      validateRoomConfiguration([
+        { id: "a", maxCapacity: 2 },
+        { id: "b", maxCapacity: 4 },
+      ]),
+    ).toThrow("unlimited");
+  });
+
+  it("rejects finite capacities below two", () => {
+    expect(() =>
+      validateRoomConfiguration([
+        { id: "open", maxCapacity: null },
+        { id: "single", maxCapacity: 1 },
+      ]),
+    ).toThrow("at least two");
+  });
+
+  it("accepts seeded rooms with an unlimited room", () => {
+    expect(() =>
+      validateRoomConfiguration([
+        { id: "open", maxCapacity: null },
+        { id: "small", maxCapacity: 2 },
+      ]),
+    ).not.toThrow();
   });
 });

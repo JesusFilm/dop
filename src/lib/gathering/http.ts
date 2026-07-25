@@ -45,22 +45,6 @@ export function errorResponse(error: unknown): NextResponse {
   );
 }
 
-export function parseOptionalCapacity(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < 1 ||
-    value > 500
-  ) {
-    throw new GatheringError(
-      "Maximum capacity must be a whole number between 1 and 500.",
-      "INVALID_CAPACITY",
-    );
-  }
-  return value;
-}
-
 export async function readJsonObject(
   request: Request,
 ): Promise<Record<string, unknown>> {

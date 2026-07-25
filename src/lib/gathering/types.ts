@@ -41,6 +41,5 @@ export type OrganizerSnapshot = {
   revision: number;
   participantCount: number;
   capacitySufficient: boolean;
-  capacityShortfall: number;
   rooms: OrganizerRoomSnapshot[];
 };

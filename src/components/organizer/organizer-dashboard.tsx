@@ -1,15 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import {
   ArrowRight,
   BadgeCheck,
   DoorOpen,
-  Pencil,
-  Plus,
   Radio,
   RotateCcw,
-  Trash2,
   Users,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
@@ -22,15 +19,7 @@ import type {
 } from "@/lib/gathering/types";
 import { useLiveSnapshot } from "@/lib/use-live-snapshot";
 
-type RoomDraft = Pick<
-  OrganizerRoomSnapshot,
-  "id" | "name" | "directions" | "maxCapacity"
->;
-
-type Confirmation =
-  | { kind: "launch" }
-  | { kind: "reset" }
-  | { kind: "remove"; room: OrganizerRoomSnapshot };
+type Confirmation = { kind: "launch" } | { kind: "reset" };
 
 async function mutate<T>(endpoint: string, body?: unknown): Promise<T> {
   const response = await fetchWithTimeout(endpoint, {
@@ -45,111 +34,12 @@ async function mutate<T>(endpoint: string, body?: unknown): Promise<T> {
   return result;
 }
 
-function RoomForm({
-  room,
-  onSave,
-  onCancel,
-}: {
-  room: RoomDraft | null;
-  onSave: (draft: Omit<RoomDraft, "id">) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [error, setError] = useState("");
-  const [isPending, setPending] = useState(false);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const name = String(data.get("name") ?? "").trim();
-    if (!name) {
-      setError("Give the room a name before saving it.");
-      return;
-    }
-    const capacityValue = String(data.get("capacity") ?? "").trim();
-    setPending(true);
-    setError("");
-    try {
-      await onSave({
-        name,
-        directions: String(data.get("directions") ?? "").trim(),
-        maxCapacity: capacityValue ? Number(capacityValue) : null,
-      });
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Room update failed.",
-      );
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-5">
-      <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
-        Room name
-        <input
-          name="name"
-          autoFocus
-          required
-          maxLength={100}
-          defaultValue={room?.name}
-          className="min-h-14 rounded-xl border border-outline bg-white px-4 text-base font-normal normal-case tracking-normal text-ink focus:border-primary focus:outline-none"
-          placeholder="e.g. Garden Room"
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
-        Wayfinding note
-        <textarea
-          name="directions"
-          rows={3}
-          maxLength={500}
-          defaultValue={room?.directions}
-          className="resize-none rounded-xl border border-outline bg-white px-4 py-3 text-base font-normal normal-case tracking-normal text-ink focus:border-primary focus:outline-none"
-          placeholder="Level 1, beside reception."
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
-        Maximum capacity
-        <input
-          name="capacity"
-          type="number"
-          min={1}
-          max={500}
-          defaultValue={room?.maxCapacity ?? ""}
-          className="min-h-14 rounded-xl border border-outline bg-white px-4 text-base font-normal normal-case tracking-normal text-ink focus:border-primary focus:outline-none"
-          placeholder="Leave blank for unlimited"
-        />
-        <span className="font-normal normal-case tracking-normal">
-          Leave blank for unlimited. At least one room must stay unlimited.
-        </span>
-      </label>
-      {error ? (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      ) : null}
-      <div className="flex flex-col gap-3 sm:flex-row-reverse">
-        <ActionButton type="submit" disabled={isPending}>
-          {isPending ? "Saving…" : room ? "Save room" : "Add room"}
-        </ActionButton>
-        <ActionButton tone="secondary" onClick={onCancel}>
-          Cancel
-        </ActionButton>
-      </div>
-    </form>
-  );
-}
-
 function RoomCard({
   room,
-  canEdit,
-  onEdit,
-  onRemove,
+  revealed,
 }: {
   room: OrganizerRoomSnapshot;
-  canEdit: boolean;
-  onEdit: () => void;
-  onRemove: () => void;
+  revealed: boolean;
 }) {
   const summary = (
     <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -169,30 +59,6 @@ function RoomCard({
     </div>
   );
 
-  if (canEdit) {
-    return (
-      <article className="flex items-center gap-3 rounded-3xl bg-surface-muted p-4 sm:p-5">
-        {summary}
-        <button
-          type="button"
-          aria-label={`Edit ${room.name}`}
-          className="grid size-10 place-items-center rounded-full text-ink-muted hover:bg-white hover:text-primary"
-          onClick={onEdit}
-        >
-          <Pencil aria-hidden="true" className="size-4" />
-        </button>
-        <button
-          type="button"
-          aria-label={`Remove ${room.name}`}
-          className="grid size-10 place-items-center rounded-full text-ink-muted hover:bg-white hover:text-danger"
-          onClick={onRemove}
-        >
-          <Trash2 aria-hidden="true" className="size-4" />
-        </button>
-      </article>
-    );
-  }
-
   return (
     <details className="rounded-3xl bg-surface-muted p-4 sm:p-5">
       <summary className="flex cursor-pointer list-none items-center gap-3">
@@ -206,7 +72,9 @@ function RoomCard({
         <p className="text-sm text-ink-muted">
           Coordinator:{" "}
           <strong className="text-ink">
-            {room.coordinatorName ?? "Not assigned"}
+            {revealed
+              ? (room.coordinatorName ?? "Not assigned")
+              : "Selected at reveal"}
           </strong>
         </p>
         <ul className="mt-3 flex flex-wrap gap-2">
@@ -234,11 +102,9 @@ export function OrganizerDashboard({
     initialSnapshot,
     "/api/organizer",
   );
-  const [roomEditor, setRoomEditor] = useState<RoomDraft | "new" | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [error, setError] = useState("");
   const [isPending, setPending] = useState(false);
-  const canEdit = snapshot.phase === "FORMING";
 
   async function run(endpoint: string, body?: unknown) {
     setPending(true);
@@ -255,15 +121,6 @@ export function OrganizerDashboard({
     }
   }
 
-  async function saveRoom(draft: Omit<RoomDraft, "id">) {
-    await run("/api/organizer/rooms", {
-      action: roomEditor === "new" ? "add" : "update",
-      id: roomEditor === "new" ? undefined : roomEditor?.id,
-      ...draft,
-    });
-    setRoomEditor(null);
-  }
-
   function openConfirmation(next: Confirmation) {
     setError("");
     setConfirmation(next);
@@ -277,12 +134,7 @@ export function OrganizerDashboard({
   async function confirmAction() {
     if (!confirmation) return;
     try {
-      if (confirmation.kind === "remove") {
-        await run("/api/organizer/rooms", {
-          action: "remove",
-          id: confirmation.room.id,
-        });
-      } else if (confirmation.kind === "launch") {
+      if (confirmation.kind === "launch") {
         await run("/api/organizer/launch");
       } else {
         await run("/api/organizer/reset");
@@ -303,8 +155,8 @@ export function OrganizerDashboard({
           {isDisconnected
             ? "Reconnecting"
             : snapshot.phase === "FORMING"
-              ? "Waiting for launch"
-              : "Rooms assigned"}
+              ? "Waiting for reveal"
+              : "Rooms revealed"}
         </span>
       </aside>
 
@@ -358,28 +210,18 @@ export function OrganizerDashboard({
             <div className="mt-6 flex flex-col gap-3">
               {snapshot.rooms.length === 0 ? (
                 <p className="rounded-3xl border border-dashed border-outline p-6 text-center text-ink-muted">
-                  Add the first physical room to prepare the gathering.
+                  Room seed configuration is missing. Seed at least one
+                  unlimited room before participants join.
                 </p>
               ) : null}
               {snapshot.rooms.map((room) => (
                 <RoomCard
                   key={room.id}
                   room={room}
-                  canEdit={canEdit}
-                  onEdit={() => setRoomEditor(room)}
-                  onRemove={() => openConfirmation({ kind: "remove", room })}
+                  revealed={snapshot.phase === "ASSIGNED"}
                 />
               ))}
             </div>
-            {canEdit ? (
-              <ActionButton
-                tone="secondary"
-                className="mt-5"
-                onClick={() => setRoomEditor("new")}
-              >
-                <Plus aria-hidden="true" className="size-5" /> Add room
-              </ActionButton>
-            ) : null}
           </section>
 
           <section className="relative overflow-hidden rounded-[2.5rem] bg-white p-7 shadow-ambient sm:p-10">
@@ -407,7 +249,7 @@ export function OrganizerDashboard({
                   <BadgeCheck aria-hidden="true" className="size-8 shrink-0" />
                   <div>
                     <h2 className="text-lg font-semibold">
-                      Room assignment launched
+                      Room assignments revealed
                     </h2>
                     <p className="mt-1 text-sm">
                       Expand a room to see its roster and coordinator.
@@ -421,15 +263,13 @@ export function OrganizerDashboard({
                     className="min-h-16 text-base"
                     onClick={() => openConfirmation({ kind: "launch" })}
                   >
-                    Launch room assignment{" "}
+                    Reveal room assignments{" "}
                     <ArrowRight aria-hidden="true" className="size-5" />
                   </ActionButton>
                   <p className="mx-auto mt-5 max-w-xl text-center text-sm leading-6 text-ink-muted">
-                    {snapshot.rooms.length === 0
-                      ? "Add at least one room before launching."
-                      : snapshot.capacityShortfall > 0
-                        ? `Add capacity for ${snapshot.capacityShortfall} more ${snapshot.capacityShortfall === 1 ? "person" : "people"} before launching.`
-                        : `Ready to distribute everyone evenly across ${snapshot.rooms.length} ${snapshot.rooms.length === 1 ? "room" : "rooms"}.`}
+                    {snapshot.capacitySufficient
+                      ? `${snapshot.participantCount} hidden ${snapshot.participantCount === 1 ? "assignment is" : "assignments are"} ready to reveal across ${snapshot.rooms.length} ${snapshot.rooms.length === 1 ? "room" : "rooms"}.`
+                      : "The seeded rooms must include at least one unlimited room, and every finite capacity must be at least two."}
                   </p>
                 </div>
               )}
@@ -444,34 +284,17 @@ export function OrganizerDashboard({
       </main>
 
       <Modal
-        open={roomEditor !== null}
-        onClose={() => setRoomEditor(null)}
-        title={roomEditor === "new" ? "Add a room" : "Edit room"}
-        description="Give participants a recognizable name, directions, and an optional maximum."
-      >
-        <RoomForm
-          room={roomEditor === "new" ? null : roomEditor}
-          onSave={saveRoom}
-          onCancel={() => setRoomEditor(null)}
-        />
-      </Modal>
-
-      <Modal
         open={confirmation !== null}
         onClose={closeConfirmation}
         title={
           confirmation?.kind === "launch"
-            ? "Launch room assignment?"
-            : confirmation?.kind === "reset"
-              ? "Reset this gathering?"
-              : `Remove ${confirmation?.room.name ?? "this room"}?`
+            ? "Reveal room assignments?"
+            : "Reset this gathering?"
         }
         description={
           confirmation?.kind === "launch"
-            ? `This will assign ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. Assignment is final until the gathering is reset.`
-            : confirmation?.kind === "reset"
-              ? "This clears every participant and prayer request, but keeps the room setup."
-              : "Participants will no longer be assigned to this physical space."
+            ? `This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. Those assignments are final until the gathering is reset.`
+            : "This clears every participant and prayer request, but keeps the seeded rooms."
         }
       >
         <div className="flex flex-col gap-3">
@@ -491,10 +314,8 @@ export function OrganizerDashboard({
             {isPending
               ? "Updating…"
               : confirmation?.kind === "launch"
-                ? "Assign everyone"
-                : confirmation?.kind === "reset"
-                  ? "Reset gathering"
-                  : "Remove room"}
+                ? "Reveal assignments"
+                : "Reset gathering"}
           </ActionButton>
           <ActionButton
             tone="secondary"

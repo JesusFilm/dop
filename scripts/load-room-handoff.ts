@@ -54,57 +54,17 @@ async function get(path: string, cookie?: string) {
   return result;
 }
 
-type SavedRoom = {
-  name: string;
-  directions: string;
-  maxCapacity: number | null;
-};
-
-async function replaceRooms(rooms: readonly SavedRoom[]) {
-  const current = await get("/api/organizer");
-  const roomsToRemove = [...(current.rooms ?? [])].sort(
-    (left, right) =>
-      Number(left.maxCapacity === null) - Number(right.maxCapacity === null),
-  );
-  for (const room of roomsToRemove) {
-    await post("/api/organizer/rooms", { action: "remove", id: room.id });
-  }
-
-  const roomsToAdd = [...rooms].sort(
-    (left, right) =>
-      Number(right.maxCapacity === null) - Number(left.maxCapacity === null),
-  );
-  for (const room of roomsToAdd) {
-    await post("/api/organizer/rooms", {
-      action: "add",
-      name: room.name,
-      directions: room.directions,
-      maxCapacity: room.maxCapacity,
-    });
-  }
-}
-
 async function main() {
   const startedAt = performance.now();
   await post("/api/organizer/reset");
-  const original = await get("/api/organizer");
-  const originalRooms: SavedRoom[] = (original.rooms ?? []).map(
-    ({ name, directions, maxCapacity }: SavedRoom) => ({
-      name,
-      directions,
-      maxCapacity,
-    }),
-  );
+  const seeded = await get("/api/organizer");
+  if (!seeded.capacitySufficient) {
+    throw new Error(
+      "Seeded rooms must include at least one unlimited room, and finite capacities must be at least two.",
+    );
+  }
 
   try {
-    await replaceRooms(
-      Array.from({ length: 6 }, (_, index) => ({
-        name: `Load Room ${index + 1}`,
-        directions: `Load-test location ${index + 1}`,
-        maxCapacity: index === 0 ? null : 12,
-      })),
-    );
-
     const participants = await Promise.all(
       Array.from({ length: 50 }, (_, index) =>
         post("/api/participant", {
@@ -113,6 +73,22 @@ async function main() {
         }),
       ),
     );
+    if (participants.some(({ result }) => result.state !== "LOBBY")) {
+      throw new Error("At least one participant saw a room before the reveal.");
+    }
+
+    const provisional = await get("/api/organizer");
+    const provisionallyAssigned = provisional.rooms.reduce(
+      (total: number, room: { memberCount: number }) =>
+        total + room.memberCount,
+      0,
+    );
+    if (provisionallyAssigned !== 50) {
+      throw new Error(
+        `Organizer rosters contain ${provisionallyAssigned} of 50 participants before reveal.`,
+      );
+    }
+
     await post("/api/organizer/launch");
 
     const roomSnapshots = await Promise.all(
@@ -136,7 +112,11 @@ async function main() {
     }
 
     const organizer = await get("/api/organizer");
-    if (JSON.stringify(organizer).includes("Private load request")) {
+    const organizerText = JSON.stringify(organizer);
+    if (
+      organizerText.includes("Private load request") ||
+      organizerText.includes("Late private request")
+    ) {
       throw new Error("Organizer projection exposed a prayer request.");
     }
 
@@ -145,13 +125,12 @@ async function main() {
         status: "ok",
         participants: 50,
         lateParticipants: 1,
-        rooms: 6,
+        rooms: seeded.rooms.length,
         elapsedMs: Math.round(performance.now() - startedAt),
       }),
     );
   } finally {
     await post("/api/organizer/reset");
-    await replaceRooms(originalRooms);
   }
 }
 

@@ -2,9 +2,9 @@
 
 A mobile-first room-handoff app for one live, in-person Day of Prayer
 gathering. Participants join from one shared link, wait in a synchronized
-lobby, and receive a balanced physical-room assignment with a randomly selected
-coordinator. The organizer configures and monitors the gathering at
-`/organizer`.
+lobby, and receive an immediate hidden room assignment. The organizer monitors
+provisional rosters at `/admin`, then reveals assignments with a randomly
+selected coordinator.
 
 The guided prayer experience after people reach their rooms is intentionally
 deferred.
@@ -42,7 +42,7 @@ stored prayer requests need to remain readable.
 Open:
 
 - Participant experience: `http://localhost:3000/`
-- Organizer experience: `http://localhost:3000/organizer`
+- Organizer experience: `http://localhost:3000/admin`
 - Database-backed health: `http://localhost:3000/api/health`
 
 ## Verification
@@ -58,9 +58,10 @@ The integration test needs the same `DATABASE_URL` and
 
 ### Guarded 50-participant load run
 
-The load script resets the active gathering before and after the run. It refuses
-to start without an explicit confirmation and refuses remote targets unless
-separately allowed.
+The load script uses the target database's existing seeded rooms and resets the
+active gathering before and after the run. It never modifies room
+configuration, refuses to start without an explicit confirmation, and refuses
+remote targets unless separately allowed.
 
 ```bash
 LOAD_TEST_BASE_URL=http://localhost:3000 \
@@ -73,13 +74,18 @@ For a remote non-production test environment, also set
 
 ## Event operation
 
-1. Run `pnpm db:seed` once in each new environment, or configure rooms manually
-   at `/organizer`. The seed adds only missing rooms and refuses to run after
-   launch.
-2. Share the participant root link and watch the joined count.
-3. Launch once everyone expected has arrived. Assignment is final until reset.
-4. After the room handoff, expand room cards to see rosters and coordinators.
-5. Reset only when the run is finished or before a test run. Reset deletes live
+1. Run `pnpm db:seed` once in each new environment to seed the physical rooms
+   outside the event-day application. Every finite capacity must be at least
+   two and at least one room must be unlimited.
+2. Open `/admin`, share the participant root link, and watch live provisional
+   rosters fill in deterministic room order.
+3. Reveal once everyone expected has arrived. Existing assignments become
+   visible and are final until reset.
+4. Participants can still join afterward. Each late arrival is assigned to the
+   first configured smallest eligible room without moving existing members or
+   replacing an existing coordinator.
+5. Expand room cards before or after reveal to inspect rosters and coordinators.
+6. Reset only when the run is finished or before a test run. Reset deletes live
    participant and prayer-request rows but does not control the separate
    retention period of provider-managed database backups.
 

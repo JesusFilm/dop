@@ -1,5 +1,5 @@
 ---
-title: Seed mutable room configuration once per environment
+title: Seed room configuration once per environment
 date: 2026-07-26
 category: conventions
 module: gathering-room-configuration
@@ -8,17 +8,17 @@ component: database
 severity: medium
 applies_when:
   - Known room configuration must be provisioned in a new environment
-  - Organizers may edit or remove the provisioned rooms later
+  - Event-day room configuration is read-only in the application
 tags: [prisma, seed-data, rooms, railway, deployment]
 ---
 
-# Seed mutable room configuration once per environment
+# Seed room configuration once per environment
 
 ## Context
 
-The gathering uses a known set of physical rooms, but room records remain
-editable operational configuration. Reset preserves those records, so they
-should be provisioned once rather than recreated on every application deploy.
+The gathering uses a known set of physical rooms that remain read-only in the
+event-day application. Reset preserves those records, so they should be
+provisioned once rather than recreated on every application deploy.
 
 ## Guidance
 
@@ -38,22 +38,19 @@ pnpm db:seed
 ```
 
 Do not add `pnpm db:seed` to Railway's per-deploy command. An automatic seed
-could recreate a room that an organizer intentionally removed.
+could unexpectedly change a deliberately managed environment.
 
 ## Why This Matters
 
-One-time provisioning removes repetitive event setup without turning mutable
-operational data into deployment-owned state. Name-based filtering avoids
-duplicates when an organizer created a room before the seed ran, while the
-launch-state guard preserves the product rule that room configuration is locked
-after assignment.
+One-time provisioning removes repetitive event setup without making room
+creation an event-day responsibility. Name-based filtering avoids duplicates
+when a room already exists, while the launch-state guard prevents provisioning
+from changing an active gathering.
 
 ## When to Apply
 
 - A new local, test, or production database needs the standard room list.
-- The standard list is a starting configuration rather than immutable reference
-  data.
-- Operators need to retain control over later room edits.
+- Room changes are managed outside the event-day application.
 
 ## Examples
 

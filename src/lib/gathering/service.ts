@@ -1,9 +1,10 @@
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { getDatabase } from "@/lib/db";
 import {
-  assignParticipantsToRooms,
   chooseCoordinator,
+  pickNextRoom,
   pickSmallestEligibleRoom,
+  validateRoomConfiguration,
 } from "@/lib/gathering/assignment";
 import { ACTIVE_GATHERING_ID, INPUT_LIMITS } from "@/lib/gathering/constants";
 import { GatheringError } from "@/lib/gathering/errors";
@@ -74,24 +75,31 @@ async function serializedTransaction<T>(
   throw new Error("Gathering transaction retry limit reached.");
 }
 
-function capacityStatus(
-  participantCount: number,
-  rooms: { maxCapacity: number | null }[],
-) {
-  const hasUnlimitedRoom = rooms.some((room) => room.maxCapacity === null);
-  const finiteCapacity = rooms.reduce(
-    (sum, room) => sum + (room.maxCapacity ?? 0),
-    0,
-  );
-  const capacity = hasUnlimitedRoom ? Number.POSITIVE_INFINITY : finiteCapacity;
+function capacityStatus(rooms: { id: string; maxCapacity: number | null }[]) {
+  let configurationValid = true;
+  try {
+    validateRoomConfiguration(rooms);
+  } catch {
+    configurationValid = false;
+  }
 
   return {
-    capacitySufficient: rooms.length > 0 && capacity >= participantCount,
-    capacityShortfall:
-      rooms.length === 0
-        ? participantCount
-        : Math.max(0, participantCount - capacity),
+    capacitySufficient: configurationValid,
   };
+}
+
+function assertValidRoomConfiguration(
+  rooms: { id: string; maxCapacity: number | null }[],
+): void {
+  try {
+    validateRoomConfiguration(rooms);
+  } catch (error) {
+    throw new GatheringError(
+      error instanceof Error ? error.message : "Room configuration is invalid.",
+      "ROOM_CONFIGURATION_INVALID",
+      409,
+    );
+  }
 }
 
 export async function getParticipantSnapshot(
@@ -129,7 +137,7 @@ export async function getParticipantSnapshot(
     return { state: "JOIN", revision: gathering.revision };
   }
 
-  if (!participant.room) {
+  if (gathering.phase === "FORMING" || !participant.room) {
     return {
       state: "LOBBY",
       revision: gathering.revision,
@@ -176,7 +184,7 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
       },
     }),
   ]);
-  const status = capacityStatus(participantCount, rooms);
+  const status = capacityStatus(rooms);
 
   return {
     phase: gathering.phase,
@@ -230,32 +238,26 @@ export async function joinParticipant(input: {
       ? encryptPrayerRequest(prayerRequest)
       : null;
 
-    let roomId: string | null = null;
-    let assignedAt: Date | null = null;
-
-    if (gathering.phase === "ASSIGNED") {
-      const rooms = await transaction.room.findMany({
-        where: { gatheringId: ACTIVE_GATHERING_ID },
-        include: { _count: { select: { participants: true } } },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      });
-      const room = pickSmallestEligibleRoom(
-        rooms.map((room) => ({
-          ...room,
-          participantCount: room._count.participants,
-        })),
+    const rooms = await transaction.room.findMany({
+      where: { gatheringId: ACTIVE_GATHERING_ID },
+      include: { _count: { select: { participants: true } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    assertValidRoomConfiguration(rooms);
+    const assignmentRooms = rooms.map((candidate) => ({
+      ...candidate,
+      participantCount: candidate._count.participants,
+    }));
+    const room =
+      gathering.phase === "FORMING"
+        ? pickNextRoom(assignmentRooms)
+        : pickSmallestEligibleRoom(assignmentRooms);
+    if (!room) {
+      throw new GatheringError(
+        "No room can accept another participant.",
+        "ROOM_CONFIGURATION_INVALID",
+        409,
       );
-
-      if (!room) {
-        throw new GatheringError(
-          "No room can accept another participant.",
-          "NO_ROOM_CAPACITY",
-          409,
-        );
-      }
-
-      roomId = room.id;
-      assignedAt = new Date();
     }
 
     const participant = await transaction.participant.create({
@@ -266,160 +268,16 @@ export async function joinParticipant(input: {
         prayerCiphertext: encrypted?.ciphertext,
         prayerIv: encrypted?.iv,
         prayerAuthTag: encrypted?.authTag,
-        roomId,
-        assignedAt,
+        roomId: room.id,
+        assignedAt: new Date(),
       },
     });
-    if (roomId) {
+    if (gathering.phase === "ASSIGNED") {
       await transaction.room.updateMany({
-        where: { id: roomId, coordinatorId: null },
+        where: { id: room.id, coordinatorId: null },
         data: { coordinatorId: participant.id },
       });
     }
-    await transaction.gathering.update({
-      where: { id: ACTIVE_GATHERING_ID },
-      data: { revision: { increment: 1 } },
-    });
-  });
-}
-
-export async function addRoom(input: {
-  name: string;
-  directions: string;
-  maxCapacity: number | null;
-}): Promise<void> {
-  const name = normalizedText(input.name, INPUT_LIMITS.roomName);
-  const directions = input.directions
-    .trim()
-    .slice(0, INPUT_LIMITS.roomDirections);
-  if (!name) {
-    throw new GatheringError("Give the room a name.", "ROOM_NAME_REQUIRED");
-  }
-
-  await serializedTransaction(async (transaction) => {
-    const gathering = await transaction.gathering.findUniqueOrThrow({
-      where: { id: ACTIVE_GATHERING_ID },
-    });
-    if (gathering.phase !== "FORMING") {
-      throw new GatheringError(
-        "Rooms are locked after launch.",
-        "ROOMS_LOCKED",
-        409,
-      );
-    }
-
-    const roomCount = await transaction.room.count({
-      where: { gatheringId: ACTIVE_GATHERING_ID },
-    });
-    if (roomCount === 0 && input.maxCapacity !== null) {
-      throw new GatheringError(
-        "The first room must have unlimited capacity.",
-        "UNLIMITED_ROOM_REQUIRED",
-      );
-    }
-
-    await transaction.room.create({
-      data: {
-        gatheringId: ACTIVE_GATHERING_ID,
-        name,
-        directions,
-        maxCapacity: input.maxCapacity,
-      },
-    });
-    await transaction.gathering.update({
-      where: { id: ACTIVE_GATHERING_ID },
-      data: { revision: { increment: 1 } },
-    });
-  });
-}
-
-export async function updateRoom(input: {
-  id: string;
-  name: string;
-  directions: string;
-  maxCapacity: number | null;
-}): Promise<void> {
-  const name = normalizedText(input.name, INPUT_LIMITS.roomName);
-  const directions = input.directions
-    .trim()
-    .slice(0, INPUT_LIMITS.roomDirections);
-  if (!name) {
-    throw new GatheringError("Give the room a name.", "ROOM_NAME_REQUIRED");
-  }
-
-  await serializedTransaction(async (transaction) => {
-    const gathering = await transaction.gathering.findUniqueOrThrow({
-      where: { id: ACTIVE_GATHERING_ID },
-    });
-    if (gathering.phase !== "FORMING") {
-      throw new GatheringError(
-        "Rooms are locked after launch.",
-        "ROOMS_LOCKED",
-        409,
-      );
-    }
-
-    const rooms = await transaction.room.findMany({
-      where: { gatheringId: ACTIVE_GATHERING_ID },
-      select: { id: true, maxCapacity: true },
-    });
-    if (!rooms.some((room) => room.id === input.id)) {
-      throw new GatheringError("Room not found.", "ROOM_NOT_FOUND", 404);
-    }
-    if (
-      input.maxCapacity !== null &&
-      !rooms.some((room) => room.id !== input.id && room.maxCapacity === null)
-    ) {
-      throw new GatheringError(
-        "At least one room must have unlimited capacity.",
-        "UNLIMITED_ROOM_REQUIRED",
-      );
-    }
-
-    await transaction.room.update({
-      where: { id: input.id },
-      data: { name, directions, maxCapacity: input.maxCapacity },
-    });
-    await transaction.gathering.update({
-      where: { id: ACTIVE_GATHERING_ID },
-      data: { revision: { increment: 1 } },
-    });
-  });
-}
-
-export async function removeRoom(roomId: string): Promise<void> {
-  await serializedTransaction(async (transaction) => {
-    const gathering = await transaction.gathering.findUniqueOrThrow({
-      where: { id: ACTIVE_GATHERING_ID },
-    });
-    if (gathering.phase !== "FORMING") {
-      throw new GatheringError(
-        "Rooms are locked after launch.",
-        "ROOMS_LOCKED",
-        409,
-      );
-    }
-
-    const rooms = await transaction.room.findMany({
-      where: { gatheringId: ACTIVE_GATHERING_ID },
-      select: { id: true, maxCapacity: true },
-    });
-    const room = rooms.find(({ id }) => id === roomId);
-    if (!room) {
-      throw new GatheringError("Room not found.", "ROOM_NOT_FOUND", 404);
-    }
-    const remaining = rooms.filter(({ id }) => id !== roomId);
-    if (
-      remaining.length > 0 &&
-      !remaining.some(({ maxCapacity }) => maxCapacity === null)
-    ) {
-      throw new GatheringError(
-        "At least one room must have unlimited capacity.",
-        "UNLIMITED_ROOM_REQUIRED",
-      );
-    }
-
-    await transaction.room.delete({ where: { id: roomId } });
     await transaction.gathering.update({
       where: { id: ACTIVE_GATHERING_ID },
       data: { revision: { increment: 1 } },
@@ -440,42 +298,27 @@ export async function launchGathering(): Promise<void> {
       );
     }
 
-    const [rooms, participants] = await Promise.all([
-      transaction.room.findMany({
-        where: { gatheringId: ACTIVE_GATHERING_ID },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      }),
-      transaction.participant.findMany({
-        where: { gatheringId: ACTIVE_GATHERING_ID },
-        select: { id: true },
-      }),
-    ]);
-
-    let assignments: Map<string, string[]>;
-    try {
-      assignments = assignParticipantsToRooms(
-        participants.map(({ id }) => id),
-        rooms,
-      );
-    } catch (error) {
-      throw new GatheringError(
-        error instanceof Error ? error.message : "Assignment could not launch.",
-        "LAUNCH_BLOCKED",
-        409,
-      );
-    }
+    const rooms = await transaction.room.findMany({
+      where: { gatheringId: ACTIVE_GATHERING_ID },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      include: {
+        participants: {
+          orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+          select: { id: true },
+        },
+      },
+    });
+    assertValidRoomConfiguration(rooms);
 
     const assignedAt = new Date();
-    for (const [roomId, participantIds] of assignments) {
-      if (participantIds.length > 0) {
-        await transaction.participant.updateMany({
-          where: { id: { in: participantIds } },
-          data: { roomId, assignedAt },
-        });
-      }
+    for (const room of rooms) {
       await transaction.room.update({
-        where: { id: roomId },
-        data: { coordinatorId: chooseCoordinator(participantIds) },
+        where: { id: room.id },
+        data: {
+          coordinatorId: chooseCoordinator(
+            room.participants.map(({ id }) => id),
+          ),
+        },
       });
     }
     await transaction.gathering.update({
@@ -498,9 +341,27 @@ export async function takeOverCoordinator(
         sessionTokenHash,
         gatheringId: ACTIVE_GATHERING_ID,
       },
-      select: { id: true, roomId: true },
+      select: {
+        id: true,
+        roomId: true,
+        gathering: { select: { phase: true } },
+      },
     });
-    if (!participant?.roomId) {
+    if (!participant) {
+      throw new GatheringError(
+        "Only an assigned room member can take over.",
+        "NOT_ASSIGNED",
+        403,
+      );
+    }
+    if (participant.gathering.phase !== "ASSIGNED") {
+      throw new GatheringError(
+        "Coordinator takeover is available after room assignments are revealed.",
+        "NOT_REVEALED",
+        409,
+      );
+    }
+    if (!participant.roomId) {
       throw new GatheringError(
         "Only an assigned room member can take over.",
         "NOT_ASSIGNED",
