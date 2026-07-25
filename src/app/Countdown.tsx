@@ -18,10 +18,20 @@ import { formatCountdown } from "@/lib/reveal";
  * reaches zero it asks the server to re-render via {@link useRouter.refresh},
  * letting the app clock — the sole authority — decide what to serve next (reveal
  * view or a hard-closed notice), rather than the client unlocking content on its
- * own. That refresh is **retried on a slow cadence** while the screen is still
- * pre-reveal, so a single failed round-trip (flaky venue wifi at the reveal
- * moment) can't freeze the display at 0:00 until a manual reload — it catches up
- * on the next successful refresh, which unmounts this component.
+ * own.
+ *
+ * **What the retry covers.** The refresh is re-attempted on a slow cadence while
+ * the screen is still pre-reveal, which rescues the case where a refresh
+ * *succeeds* but the server has not swapped the view yet — a stale or lost
+ * round-trip leaves the display at 0:00 until the next attempt lands, and the
+ * one that lands unmounts this component. It does **not** rescue a refresh that
+ * outright fails: on a non-OK response or a thrown fetch (the phone is offline),
+ * Next abandons the soft refresh and performs a full document navigation
+ * instead. So a hard failure at the boundary is not a frozen 0:00 — it is a page
+ * load, which online nobody notices and offline replaces the screen with the
+ * browser's error page. That matters on a surface holding something the
+ * participant still needs, like the recovery code on `/confirmed`. See
+ * `docs/solutions/design-patterns/server-authoritative-time-gating.md`.
  */
 
 /** How often the countdown recomputes and repaints, in milliseconds. */
@@ -29,9 +39,10 @@ const TICK_INTERVAL_MS = 1000;
 
 /**
  * How often to re-attempt the reveal `router.refresh()` once the countdown has
- * reached zero but the server hasn't yet swapped in the reveal view (a failed
- * or lost refresh). Slow enough not to hammer the server, brief enough that a
- * recovering network advances the participant within a few seconds.
+ * reached zero but the server hasn't yet swapped in the reveal view (a stale or
+ * lost round-trip — an outright failure navigates instead of retrying, see the
+ * component docstring). Slow enough not to hammer the server, brief enough that
+ * a recovering network advances the participant within a few seconds.
  */
 const REVEAL_REFRESH_RETRY_MS = 3000;
 
@@ -65,9 +76,11 @@ export function Countdown({
       if (next <= 0 && elapsed - lastRefreshAt >= REVEAL_REFRESH_RETRY_MS) {
         // The gate is the server's to open: re-render so the app clock decides
         // what comes next, rather than unlocking content client-side. Keep the
-        // interval running and retry on a slow cadence — a successful refresh
-        // serves the reveal view and unmounts us (cleanup stops the retries);
-        // a failed one (flaky wifi) is re-attempted rather than left frozen.
+        // interval running and retry on a slow cadence — a refresh that serves
+        // the reveal view unmounts us (cleanup stops the retries), and one that
+        // returns pre-reveal content is re-attempted. A refresh that outright
+        // fails never reaches this retry: Next turns it into a full document
+        // load (see the docstring).
         lastRefreshAt = elapsed;
         router.refresh();
       }

@@ -160,12 +160,11 @@ notices, offline it is the browser's error page replacing whatever the screen wa
 Weigh that where the gated screen holds something irreplaceable — `/confirmed` displays a
 recovery code the participant may not have screenshotted yet.
 
-> Note: `src/app/Countdown.tsx` currently overstates this in two places — its docstring
-> (claiming a failed round-trip "can't freeze the display at 0:00" because it is retried) and
-> the inline comment at the refresh call ("a failed one (flaky wifi) is re-attempted rather
-> than left frozen"). The retry is real, but
-> per the source above a hard failure navigates away rather than waiting to be retried. The
-> docstring correction is pending as of this writing.
+> Note: `src/app/Countdown.tsx` used to overstate this in two places — its docstring and the
+> inline comment at the refresh call both implied a failed round-trip was re-attempted rather
+> than left frozen. The retry is real, but per the source above a hard failure navigates away
+> instead of waiting to be retried. Both comments now scope the retry to the stale-response
+> case (PR #43).
 
 ## Why This Matters
 
