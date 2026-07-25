@@ -25,6 +25,7 @@ Requires Node 22+, pnpm 10, and PostgreSQL 16.
 pnpm install
 cp .env.example .env
 pnpm exec prisma migrate deploy
+pnpm db:seed
 pnpm dev
 ```
 
@@ -72,8 +73,9 @@ For a remote non-production test environment, also set
 
 ## Event operation
 
-1. Open `/organizer`, add the physical rooms, and leave at least one room
-   unlimited.
+1. Run `pnpm db:seed` once in each new environment, or configure rooms manually
+   at `/organizer`. The seed adds only missing rooms and refuses to run after
+   launch.
 2. Share the participant root link and watch the joined count.
 3. Launch once everyone expected has arrived. Assignment is final until reset.
 4. After the room handoff, expand room cards to see rosters and coordinators.
