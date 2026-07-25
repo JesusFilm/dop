@@ -16,6 +16,12 @@ export const CONFIRMATION_COPY = {
    */
   screenshotInstruction: "📸 Screenshot this — it's how you get back in.",
   saveImageButton: "Save code as image",
+  /**
+   * Introduces the event address printed beside the code. A screenshot of this
+   * card travels to another phone, where the code alone is a key with no lock —
+   * the address is what makes it usable there (§7.4).
+   */
+  returnPrompt: "If you get lost, come back here and enter your code:",
   /** Shown while the canvas render + share sheet is in flight. */
   saveImagePending: "Preparing…",
   /** Surfaced if the render or share sheet fails — the screenshot still works. */

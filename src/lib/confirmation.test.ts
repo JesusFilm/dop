@@ -38,4 +38,13 @@ describe("confirmation copy (§7.2)", () => {
     );
     expect(CONFIRMATION_COPY.saveImageButton).toBe("Save code as image");
   });
+
+  it("tells the code's holder where to use it", () => {
+    // The code restores an entry on any device (§7.4), which is only true if
+    // its holder also knows the address — a screenshot of the code alone is a
+    // key with no lock.
+    expect(CONFIRMATION_COPY.returnPrompt).toBe(
+      "If you get lost, come back here and enter your code:",
+    );
+  });
 });

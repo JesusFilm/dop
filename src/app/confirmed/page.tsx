@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getDatabase } from "@/lib/db";
@@ -13,6 +13,7 @@ import {
   findSubmissionByDeviceToken,
 } from "@/lib/repository";
 import { isRevealOpen, msUntilReveal } from "@/lib/reveal";
+import { originFromHeaders, submissionUrl } from "@/lib/setup";
 import { DEVICE_TOKEN_COOKIE } from "@/lib/submit";
 import { formatZonedTime, formatZonedWeekdayTime } from "@/lib/time";
 
@@ -78,6 +79,19 @@ export default async function Confirmed() {
   if (isRevealOpen(now, session.revealAt)) {
     redirect("/");
   }
+
+  // The address to come back to, printed beside the code so a screenshot of
+  // this card carries both (§7.4: the code restores the entry on any device,
+  // but only if its holder knows where to type it). Same resolution the setup
+  // page uses for the QR — forwarded headers, then the configured URL. When
+  // neither resolves there is no address worth printing, so the block is
+  // dropped rather than showing a bare "/".
+  const headerList = await headers();
+  const origin =
+    originFromHeaders((name) => headerList.get(name)) ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    "";
+  const returnUrl = origin ? submissionUrl(origin) : null;
 
   const revealTime = formatZonedTime(session.revealAt, session.timeZone);
   const revealPhrase = formatZonedWeekdayTime(
@@ -170,6 +184,34 @@ export default async function Confirmed() {
         >
           {submission.recoveryCode}
         </p>
+        {returnUrl ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.25rem",
+              paddingTop: "0.25rem",
+            }}
+          >
+            <span style={{ fontSize: "0.85rem", color: "#555" }}>
+              {CONFIRMATION_COPY.returnPrompt}
+            </span>
+            {/* A link so a tap works, rendered as plain selectable text so it
+                copy-pastes cleanly and reads as an address in a screenshot. */}
+            <a
+              href={returnUrl}
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                fontSize: "0.95rem",
+                color: "#3b5bdb",
+                wordBreak: "break-all",
+              }}
+            >
+              {returnUrl}
+            </a>
+          </div>
+        ) : null}
+
         <SaveCodeImage recoveryCode={submission.recoveryCode} />
       </section>
 
