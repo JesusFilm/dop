@@ -12,10 +12,11 @@ import {
   findCurrentSession,
   findSubmissionByDeviceToken,
 } from "@/lib/repository";
-import { isRevealOpen } from "@/lib/reveal";
+import { isRevealOpen, msUntilReveal } from "@/lib/reveal";
 import { DEVICE_TOKEN_COOKIE } from "@/lib/submit";
 import { formatZonedTime, formatZonedWeekdayTime } from "@/lib/time";
 
+import { Countdown } from "../Countdown";
 import { SaveCodeImage } from "./SaveCodeImage";
 
 // Reads the device cookie and live database state — never cache.
@@ -42,6 +43,14 @@ const pageStyle: React.CSSProperties = {
  * content (Privacy #3). A device with no entry, or a request that arrives once
  * the app clock has passed the reveal, is sent to `/` — the landing page is the
  * single authority on what a participant should be seeing at that moment (§5).
+ *
+ * **Live at the boundary.** This is where a participant is sent immediately
+ * after submitting, so it is the screen most likely to be left open when the
+ * reveal arrives — and its own copy tells them to wait for that moment. The
+ * server gate below only runs per request, so the {@link Countdown} carries the
+ * page across the boundary: at zero it asks the server to re-render, the gate
+ * re-evaluates against the app clock, and the participant is forwarded to `/`
+ * instead of sitting on "come back later" copy that has quietly gone false.
  */
 export default async function Confirmed() {
   const db = getDatabase();
@@ -59,9 +68,14 @@ export default async function Confirmed() {
     redirect("/");
   }
 
+  // Read the app clock once and derive both the gate and the countdown's anchor
+  // from that single reading, so the countdown cannot disagree with the gate
+  // decision that rendered it (§5).
+  const now = new Date();
+
   // Past the reveal instant this screen's "come back later" copy would be
   // false — the reveal is now. Let the landing page serve that state (§5).
-  if (isRevealOpen(new Date(), session.revealAt)) {
+  if (isRevealOpen(now, session.revealAt)) {
     redirect("/");
   }
 
@@ -100,6 +114,14 @@ export default async function Confirmed() {
           <span aria-hidden="true">🕚</span>
           {revealBadgeLine(revealTime)}
         </p>
+        {/* The countdown's own root is an inline-flex pill; this wrapper keeps
+            it from stretching to the header's full width, matching how the
+            badge above sizes itself. */}
+        <div style={{ alignSelf: "flex-start" }}>
+          <Countdown
+            initialRemainingMs={msUntilReveal(now, session.revealAt)}
+          />
+        </div>
       </header>
 
       <section
