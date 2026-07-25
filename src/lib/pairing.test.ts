@@ -108,6 +108,25 @@ describe("shuffle", () => {
     // reproducible permutation: [a,b,c] → swap(2,0) [c,b,a] → swap(1,0) [b,c,a].
     expect(shuffle(["a", "b", "c"], () => 0)).toEqual(["b", "c", "a"]);
   });
+
+  it("can move every element to every position (unbiased range)", () => {
+    // Guards the Fisher–Yates bounds: a `random() * i` off-by-one (instead of
+    // `i + 1`) or an `i >= 0` loop bound would leave some element pinned to a
+    // position across all seeds. Sweeping the random source across [0,1) must
+    // reach every (element, index) pairing at least once.
+    const input = ["a", "b", "c", "d"];
+    const reached = new Map(input.map((item) => [item, new Set<number>()]));
+
+    for (let step = 0; step < 1000; step += 1) {
+      const value = step / 1000;
+      const result = shuffle(input, () => value);
+      result.forEach((item, index) => reached.get(item)?.add(index));
+    }
+
+    for (const item of input) {
+      expect(reached.get(item)?.size).toBe(input.length);
+    }
+  });
 });
 
 /**

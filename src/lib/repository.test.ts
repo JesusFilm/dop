@@ -390,6 +390,15 @@ function fakePairingClient(tx: {
 const REVEAL_AT = new Date("2026-07-27T23:00:00.000Z");
 const AFTER_REVEAL = new Date("2026-07-27T23:00:01.000Z");
 
+/**
+ * These tests drive `freezePairing` through a fake `$transaction` that runs the
+ * callback inline. That verifies the freeze's *logic* — compute-once, the
+ * write-once short-circuit, the app-clock guard, and the SQL it issues — but by
+ * construction it cannot exercise real multi-connection contention on the
+ * Postgres advisory lock, nor the `ReadCommitted` isolation the single-winner
+ * guarantee leans on. Those hold only against a live database and are out of
+ * scope for this unit suite (they belong to an integration test).
+ */
 describe("freezePairing", () => {
   it("computes, writes groups, and stamps pairingFrozenAt when unfrozen", async () => {
     const advisoryLock = vi.fn().mockResolvedValue([]);
@@ -401,14 +410,14 @@ describe("freezePairing", () => {
     const findMany = vi
       .fn()
       .mockResolvedValue([{ id: "a" }, { id: "b" }, { id: "c" }]);
-    const groupCreate = vi.fn().mockResolvedValue({});
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 1 });
     const sessionUpdate = vi.fn().mockResolvedValue({});
 
     const client = fakePairingClient({
       $queryRaw: advisoryLock,
       session: { findUnique, update: sessionUpdate },
       submission: { findMany },
-      group: { create: groupCreate },
+      group: { createMany: groupCreateMany },
     });
 
     const result = await freezePairing(client, {
@@ -419,12 +428,21 @@ describe("freezePairing", () => {
       random: () => 0.999999,
     });
 
-    // The session lock is taken (concurrent triggers serialize on it).
+    // The session lock is the actual advisory-lock SQL (concurrent triggers
+    // serialize on it), keyed by this session id — asserted on content so a
+    // regression to a non-xact variant or a different key is caught.
     expect(advisoryLock).toHaveBeenCalledTimes(1);
-    // n=3 → exactly one trio written.
-    expect(groupCreate).toHaveBeenCalledTimes(1);
-    expect(groupCreate.mock.calls[0][0]).toEqual({
-      data: { sessionId: "sess_1", memberSubmissionIds: ["a", "b", "c"] },
+    const [lockSql, ...lockValues] = advisoryLock.mock.calls[0] as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    expect(lockSql.join("?")).toContain("pg_advisory_xact_lock");
+    expect(lockSql.join("?")).toContain("hashtextextended");
+    expect(lockValues).toContain("sess_1");
+    // n=3 → exactly one trio, written in a single createMany.
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(groupCreateMany.mock.calls[0][0]).toEqual({
+      data: [{ sessionId: "sess_1", memberSubmissionIds: ["a", "b", "c"] }],
     });
     // Only the reveal-cutoff submissions are read, ids only (Privacy #3).
     expect(findMany).toHaveBeenCalledWith({
@@ -447,7 +465,7 @@ describe("freezePairing", () => {
   });
 
   it("splits an even count into pairs and never writes a trio", async () => {
-    const groupCreate = vi.fn().mockResolvedValue({});
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 2 });
     const client = fakePairingClient({
       session: {
         findUnique: vi.fn().mockResolvedValue({
@@ -467,7 +485,7 @@ describe("freezePairing", () => {
             { id: "d" },
           ]),
       },
-      group: { create: groupCreate },
+      group: { createMany: groupCreateMany },
     });
 
     const result = await freezePairing(client, {
@@ -476,20 +494,44 @@ describe("freezePairing", () => {
       random: () => 0.999999,
     });
 
-    expect(groupCreate).toHaveBeenCalledTimes(2);
-    expect(groupCreate.mock.calls[0][0].data.memberSubmissionIds).toEqual([
-      "a",
-      "b",
-    ]);
-    expect(groupCreate.mock.calls[1][0].data.memberSubmissionIds).toEqual([
-      "c",
-      "d",
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(groupCreateMany.mock.calls[0][0].data).toEqual([
+      { sessionId: "sess_1", memberSubmissionIds: ["a", "b"] },
+      { sessionId: "sess_1", memberSubmissionIds: ["c", "d"] },
     ]);
     expect(result).toMatchObject({ status: "frozen", groupCount: 2 });
   });
 
+  it("freezes at exactly the reveal instant (close = reveal is inclusive)", async () => {
+    // `now === revealAt` is the sharp boundary `isBeforeReveal` hinges on: not
+    // before the reveal, so the freeze proceeds rather than refusing.
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      submission: {
+        findMany: vi.fn().mockResolvedValue([{ id: "a" }, { id: "b" }]),
+      },
+      group: { createMany: groupCreateMany },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: new Date(REVEAL_AT),
+    });
+
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: "frozen", groupCount: 1 });
+  });
+
   it("writes no group for the lone n=1 person but still freezes", async () => {
-    const groupCreate = vi.fn().mockResolvedValue({});
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 0 });
     const sessionUpdate = vi.fn().mockResolvedValue({});
     const client = fakePairingClient({
       session: {
@@ -501,7 +543,7 @@ describe("freezePairing", () => {
         update: sessionUpdate,
       },
       submission: { findMany: vi.fn().mockResolvedValue([{ id: "a" }]) },
-      group: { create: groupCreate },
+      group: { createMany: groupCreateMany },
     });
 
     const result = await freezePairing(client, {
@@ -509,8 +551,8 @@ describe("freezePairing", () => {
       now: AFTER_REVEAL,
     });
 
-    // Never self-matched: no group is written.
-    expect(groupCreate).not.toHaveBeenCalled();
+    // Never self-matched: no group is written (the empty set is not inserted).
+    expect(groupCreateMany).not.toHaveBeenCalled();
     // The freeze still happened so it is not retried forever.
     expect(sessionUpdate).toHaveBeenCalledTimes(1);
     expect(result).toEqual<FreezePairingResult>({
@@ -524,7 +566,7 @@ describe("freezePairing", () => {
   it("returns the existing frozen result without recomputing (write-once)", async () => {
     const frozenAt = new Date("2026-07-27T23:00:05.000Z");
     const findMany = vi.fn();
-    const groupCreate = vi.fn();
+    const groupCreateMany = vi.fn();
     const sessionUpdate = vi.fn();
 
     const client = fakePairingClient({
@@ -537,7 +579,10 @@ describe("freezePairing", () => {
         update: sessionUpdate,
       },
       submission: { findMany },
-      group: { create: groupCreate, count: vi.fn().mockResolvedValue(4) },
+      group: {
+        createMany: groupCreateMany,
+        count: vi.fn().mockResolvedValue(4),
+      },
     });
 
     const result = await freezePairing(client, {
@@ -547,7 +592,7 @@ describe("freezePairing", () => {
 
     // A frozen pairing never recomputes: no submissions read, no writes.
     expect(findMany).not.toHaveBeenCalled();
-    expect(groupCreate).not.toHaveBeenCalled();
+    expect(groupCreateMany).not.toHaveBeenCalled();
     expect(sessionUpdate).not.toHaveBeenCalled();
     expect(result).toEqual<FreezePairingResult>({
       status: "frozen",
@@ -561,16 +606,17 @@ describe("freezePairing", () => {
     // Model the single-winner sequence a real advisory lock produces: the
     // winner freezes; a later trigger sees the committed `pairingFrozenAt` and
     // reads it back rather than recomputing. A stateful fake session row stands
-    // in for the row the lock serializes access to.
+    // in for the row the lock serializes access to. (Real contention on the
+    // lock itself needs a live database — see this describe block's note.)
     const sessionRow = {
       id: "sess_1",
       revealAt: REVEAL_AT,
       pairingFrozenAt: null as Date | null,
     };
     let groupRows = 0;
-    const groupCreate = vi.fn().mockImplementation(async () => {
-      groupRows += 1;
-      return {};
+    const groupCreateMany = vi.fn().mockImplementation(async ({ data }) => {
+      groupRows += data.length;
+      return { count: data.length };
     });
 
     const client = fakePairingClient({
@@ -587,7 +633,7 @@ describe("freezePairing", () => {
           .mockResolvedValue([{ id: "a" }, { id: "b" }, { id: "c" }]),
       },
       group: {
-        create: groupCreate,
+        createMany: groupCreateMany,
         count: vi.fn().mockImplementation(async () => groupRows),
       },
     });
@@ -604,7 +650,7 @@ describe("freezePairing", () => {
     });
 
     // Exactly one compute: the trio is written once, never a second time.
-    expect(groupCreate).toHaveBeenCalledTimes(1);
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
     expect(first).toMatchObject({ alreadyFrozen: false, groupCount: 1 });
     // The loser reads the frozen result — same freeze instant, never recomputed.
     expect(second).toEqual<FreezePairingResult>({
@@ -617,7 +663,7 @@ describe("freezePairing", () => {
 
   it("refuses to freeze before the reveal instant (app-clock authority)", async () => {
     const findMany = vi.fn();
-    const groupCreate = vi.fn();
+    const groupCreateMany = vi.fn();
     const sessionUpdate = vi.fn();
 
     const client = fakePairingClient({
@@ -630,7 +676,7 @@ describe("freezePairing", () => {
         update: sessionUpdate,
       },
       submission: { findMany },
-      group: { create: groupCreate },
+      group: { createMany: groupCreateMany },
     });
 
     const result = await freezePairing(client, {
@@ -639,7 +685,7 @@ describe("freezePairing", () => {
     });
 
     expect(findMany).not.toHaveBeenCalled();
-    expect(groupCreate).not.toHaveBeenCalled();
+    expect(groupCreateMany).not.toHaveBeenCalled();
     expect(sessionUpdate).not.toHaveBeenCalled();
     expect(result).toEqual<FreezePairingResult>({
       status: "not-open",

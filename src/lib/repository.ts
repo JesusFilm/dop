@@ -275,12 +275,16 @@ const PAIRING_LOCK_SEED = 0x70726179; // "pray"
 /**
  * The Prisma surface {@link freezePairing} needs: interactive transactions. The
  * freeze runs several reads and writes as one atomic unit, so — unlike the
- * single-delegate helpers above — it takes the transaction runner rather than a
- * {@link DataClient}. The real {@link PrismaClient} satisfies it.
+ * single-delegate helpers above that take a {@link DataClient} — it takes the
+ * transaction runner. The layer therefore has two client-subset types on
+ * purpose: {@link DataClient} for the single-statement helpers, this one for
+ * the one operation that spans a transaction. The real {@link PrismaClient}
+ * satisfies both.
  */
 export type PairingClient = Pick<PrismaClient, "$transaction">;
 
 export interface FreezePairingParams {
+  /** The session whose pairing is being frozen. */
   sessionId: string;
   /**
    * The app-clock instant the freeze is attempted at (§5 App-clock authority).
@@ -389,8 +393,16 @@ export async function freezePairing(
         ),
       );
 
-      for (const memberSubmissionIds of groups) {
-        await tx.group.create({ data: { sessionId, memberSubmissionIds } });
+      // One insert for the whole pairing rather than a create-per-group loop.
+      // Skipped entirely for n < 2, where `groups` is empty (n=1 is the lone
+      // person, who is never self-matched — no group row).
+      if (groups.length > 0) {
+        await tx.group.createMany({
+          data: groups.map((memberSubmissionIds) => ({
+            sessionId,
+            memberSubmissionIds,
+          })),
+        });
       }
 
       // Stamp the freeze last, inside the same transaction, so the groups and
