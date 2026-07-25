@@ -264,6 +264,80 @@ describe("submitAction", () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 
+  it("retries an unknown-target P2002 and succeeds (adapter omitted meta.target)", async () => {
+    // Some adapters report P2002 without `meta.target`. A fresh UUID token
+    // cannot realistically collide, so an unknown target is read as retriable.
+    const cookieJar = fakeCookies();
+    vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(createSubmission)
+      .mockRejectedValueOnce({ code: "P2002" })
+      .mockResolvedValueOnce({ id: "sub_1" } as never);
+
+    await expect(
+      submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
+    ).rejects.toThrow("REDIRECT:/");
+
+    expect(createSubmission).toHaveBeenCalledTimes(2);
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("treats a persistent unknown-target P2002 on a reused token as a device race (return view)", async () => {
+    // Cookie token reused + an unknown target that never clears: after retries
+    // are exhausted this is most likely a genuine device race, so redirect to
+    // the return view keyed on the device's own token.
+    const cookieJar = fakeCookies({
+      name: DEVICE_TOKEN_COOKIE,
+      value: "device-abc",
+    });
+    vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue(null);
+    vi.mocked(createSubmission).mockRejectedValue({ code: "P2002" });
+
+    await expect(
+      submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
+    ).rejects.toThrow("REDIRECT:/");
+
+    expect(cookieJar.setCalls).toHaveLength(1);
+    expect(cookieJar.setCalls[0].value).toBe("device-abc");
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("classifies a constraint-name-string P2002 target the same as the array form", async () => {
+    // `meta.target` can be the constraint name string rather than a field
+    // array; the deviceToken branch must still match by substring.
+    const cookieJar = fakeCookies({
+      name: DEVICE_TOKEN_COOKIE,
+      value: "device-abc",
+    });
+    vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue(null);
+    vi.mocked(createSubmission).mockRejectedValue({
+      code: "P2002",
+      meta: { target: "submissions_sessionId_deviceToken_key" },
+    });
+
+    await expect(
+      submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
+    ).rejects.toThrow("REDIRECT:/");
+
+    // Matched the deviceToken branch on the first attempt — no retries.
+    expect(createSubmission).toHaveBeenCalledTimes(1);
+    expect(cookieJar.setCalls[0].value).toBe("device-abc");
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
+
   it("returns a generic error (never a raw database error) on a non-P2002 failure", async () => {
     const cookieJar = fakeCookies();
     vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
@@ -386,6 +460,31 @@ describe("editAction", () => {
     );
 
     expect(result.error).toMatch(/couldn't find/i);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic error (never a raw database error) on a non-P2025 update failure", async () => {
+    vi.mocked(cookies).mockResolvedValue(
+      fakeCookies({ name: DEVICE_TOKEN_COOKIE, value: "device-abc" })
+        .store as never,
+    );
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue({
+      id: "sub_1",
+    } as never);
+    vi.mocked(updateSubmission).mockRejectedValue(
+      new Error("connection reset"),
+    );
+
+    const result: SubmitFormState = await editAction(
+      INITIAL_SUBMIT_STATE,
+      VALID_FORM,
+    );
+
+    expect(result.error).toMatch(/went wrong/i);
     expect(redirect).not.toHaveBeenCalled();
   });
 

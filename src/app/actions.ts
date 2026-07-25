@@ -188,10 +188,12 @@ export async function submitAction(
         continue;
       }
 
-      // Retries exhausted with an unknown target: if we reused an existing
+      // Retries exhausted with an *unknown* target: if we reused an existing
       // cookie token this is most likely a genuine device race, so show the
-      // return view; otherwise surface the generic error.
-      if (retriable && existingToken) {
+      // return view. A definitive recoveryCode exhaustion falls through instead
+      // — no row was written, so surface the generic error rather than a
+      // success-looking redirect that would silently drop the entry.
+      if (uniqueViolationTarget(error).length === 0 && existingToken) {
         await setDeviceCookie(deviceToken);
         redirect("/");
       }
