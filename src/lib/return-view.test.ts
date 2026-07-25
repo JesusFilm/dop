@@ -94,6 +94,28 @@ describe("RETURN_COPY", () => {
     expect(RETURN_COPY.editSummary).toBe("Edit my request");
   });
 
+  it("states the small-n cause only on the screen that actually knows it", () => {
+    // `lone` earns its causal claim because it is reached only when the freeze
+    // produced no groups at all; `unpaired` cannot know why, so it must not
+    // borrow that explanation.
+    expect(RETURN_COPY.loneBody).toMatch(/only request/i);
+    expect(RETURN_COPY.unpairedBody).not.toMatch(/only|alone|no one else/i);
+  });
+
+  it("reassures the unpaired participant their request stayed private (#3)", () => {
+    expect(RETURN_COPY.unpairedBody).toMatch(/wasn't seen by anyone else/i);
+    expect(RETURN_COPY.unpairedBody).toMatch(/organizer/i);
+  });
+
+  it("stops promising self-recovery once the page has stopped checking", () => {
+    // pendingBody may say "this page will catch up on its own" only while that
+    // is true; the stalled copy replaces it and must hand over a real next step.
+    expect(RETURN_COPY.pendingBody).toMatch(/catch up on its own/i);
+    expect(RETURN_COPY.pendingStalledBody).not.toMatch(/on its own/i);
+    expect(RETURN_COPY.pendingStalledBody).toMatch(/organizer/i);
+    expect(RETURN_COPY.pendingRetryLabel).toBeTruthy();
+  });
+
   it("never offers messaging, contact exchange, or 'mark as prayed' (§7.3, #6)", () => {
     const allCopy = [
       ...Object.values(RETURN_COPY),
@@ -155,6 +177,7 @@ describe("selectReturnState", () => {
         revealOpen: false,
         pairingFrozen: false,
         partnerCount: 0,
+        sessionHasGroups: false,
       }),
     ).toBe("submit");
   });
@@ -166,6 +189,7 @@ describe("selectReturnState", () => {
         revealOpen: false,
         pairingFrozen: false,
         partnerCount: 0,
+        sessionHasGroups: false,
       }),
     ).toBe("pre-reveal");
   });
@@ -180,6 +204,7 @@ describe("selectReturnState", () => {
         revealOpen: false,
         pairingFrozen: true,
         partnerCount: 1,
+        sessionHasGroups: true,
       }),
     ).toBe("pre-reveal");
   });
@@ -191,6 +216,7 @@ describe("selectReturnState", () => {
         revealOpen: true,
         pairingFrozen: true,
         partnerCount: 1,
+        sessionHasGroups: true,
       }),
     ).toBe("paired");
     // A trio is the same state — two partners, two cards.
@@ -200,19 +226,38 @@ describe("selectReturnState", () => {
         revealOpen: true,
         pairingFrozen: true,
         partnerCount: 2,
+        sessionHasGroups: true,
       }),
     ).toBe("paired");
   });
 
-  it("shows the gentle small-n message to the lone participant (§4)", () => {
+  it("shows the small-n message only when the freeze produced no groups at all (§4)", () => {
     expect(
       selectReturnState({
         hasEntry: true,
         revealOpen: true,
         pairingFrozen: true,
         partnerCount: 0,
+        sessionHasGroups: false,
       }),
     ).toBe("lone");
+  });
+
+  it("never tells a paired room's excluded participant they were alone", () => {
+    // Same empty partner list, opposite truth: the pairing ran and paired the
+    // room, so this entry was left out (reachable for a last-second submission,
+    // since the freeze filters on the database's createdAt while the submit
+    // cutoff reads the app clock). Claiming "yours was the only request" here
+    // would be a flat lie to someone standing in a room of paired people.
+    expect(
+      selectReturnState({
+        hasEntry: true,
+        revealOpen: true,
+        pairingFrozen: true,
+        partnerCount: 0,
+        sessionHasGroups: true,
+      }),
+    ).toBe("unpaired");
   });
 
   it("waits, rather than claiming to be alone, when the freeze hasn't fired", () => {
@@ -224,6 +269,21 @@ describe("selectReturnState", () => {
         revealOpen: true,
         pairingFrozen: false,
         partnerCount: 0,
+        sessionHasGroups: false,
+      }),
+    ).toBe("pending-freeze");
+  });
+
+  it("waits regardless of whether other groups exist, until this freeze lands", () => {
+    // sessionHasGroups is only meaningful after the freeze; it must not pull the
+    // caller into `unpaired` while the pairing has not run.
+    expect(
+      selectReturnState({
+        hasEntry: true,
+        revealOpen: true,
+        pairingFrozen: false,
+        partnerCount: 0,
+        sessionHasGroups: true,
       }),
     ).toBe("pending-freeze");
   });
@@ -237,6 +297,7 @@ describe("selectReturnState", () => {
         revealOpen: true,
         pairingFrozen: true,
         partnerCount: 0,
+        sessionHasGroups: false,
       }),
     ).toBe("recover");
   });

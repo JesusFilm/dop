@@ -207,6 +207,22 @@ export function countSubmissions(
   return client.submission.count({ where: { sessionId } });
 }
 
+/**
+ * How many frozen Groups a session holds (§4). A bare count — never request
+ * content, never membership (Privacy #3) — which is exactly enough to tell two
+ * very different situations apart when a participant has no partner (§7.3):
+ * the pairing produced nothing because theirs was the only submission (n=1,
+ * count 0), versus the pairing ran and paired the room but left this one entry
+ * out (count > 0). Without it, "no partner" would have to be reported as the
+ * first case, which is a lie in the second.
+ */
+export function countGroups(
+  client: DataClient,
+  sessionId: string,
+): Promise<number> {
+  return client.group.count({ where: { sessionId } });
+}
+
 /** A session the auto-purge job has found to be due (§8, §10). */
 export interface SessionDueForPurge {
   id: string;

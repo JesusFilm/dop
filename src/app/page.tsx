@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { getDatabase } from "@/lib/db";
 import { RECOVERY_COPY } from "@/lib/recovery";
 import {
+  countGroups,
   findCurrentSession,
   findSubmissionByDeviceToken,
   getGroupAssignment,
@@ -116,6 +117,19 @@ export default async function Home() {
         )
       : [];
 
+  const pairingFrozen = session.pairingFrozenAt !== null;
+
+  // Whether the frozen pairing produced any group at all — the one thing that
+  // separates "yours was the only request" from "the room got paired and you
+  // were left out" (§7.3). Read only in that narrow case: it is the sole branch
+  // that consults it, and the reveal instant is a thundering herd, so the common
+  // paths must not pay for a query they never look at. A bare count, so no
+  // request content crosses the boundary (Privacy #3).
+  const sessionHasGroups =
+    revealOpen && existing !== null && pairingFrozen && partners.length === 0
+      ? (await countGroups(db, session.id)) > 0
+      : false;
+
   // Returning on the same phone, or on a device restored by a recovery code
   // (§6, §7.4 — recovery adopts the entry's device token, so both land here).
   // The `pre-reveal` state is only ever chosen when an entry exists, but that
@@ -134,14 +148,15 @@ export default async function Home() {
     />
   ) : null;
 
-  switch (
-    selectReturnState({
-      hasEntry: existing !== null,
-      revealOpen,
-      pairingFrozen: session.pairingFrozenAt !== null,
-      partnerCount: partners.length,
-    })
-  ) {
+  const state = selectReturnState({
+    hasEntry: existing !== null,
+    revealOpen,
+    pairingFrozen,
+    partnerCount: partners.length,
+    sessionHasGroups,
+  });
+
+  switch (state) {
     case "pre-reveal":
       return <main style={pageStyle}>{preRevealReturn}</main>;
 
@@ -152,18 +167,30 @@ export default async function Home() {
         </main>
       );
 
+    // Only reachable when the freeze produced no groups whatsoever, so the
+    // cause this copy states is actually known to be true (§4 small-n).
     case "lone":
       return (
         <Notice title={RETURN_COPY.loneHeading}>{RETURN_COPY.loneBody}</Notice>
       );
 
+    // The pairing paired the room but not this entry. Shouldn't happen; says so
+    // without inventing a cause, and hands them to an organizer (§10).
+    case "unpaired":
+      return (
+        <Notice title={RETURN_COPY.unpairedHeading}>
+          {RETURN_COPY.unpairedBody}
+        </Notice>
+      );
+
+    // `AutoRefresh` owns this screen's body copy as well as the refreshing:
+    // it keeps asking the server for a fresh render until the freeze lands and
+    // the partner view replaces it, and when its bounded retries are spent it
+    // swaps the copy for a manual retry — so the page never goes on promising to
+    // catch up after it has stopped trying.
     case "pending-freeze":
       return (
         <Notice title={RETURN_COPY.pendingHeading}>
-          {RETURN_COPY.pendingBody}
-          {/* Makes "this page will catch up on its own" true: keep asking the
-              server for a fresh render until the freeze lands and it serves the
-              partner view instead (which unmounts this). */}
           <AutoRefresh />
         </Notice>
       );
@@ -210,5 +237,14 @@ export default async function Home() {
           </p>
         </main>
       );
+
+    // An eighth state added to `ReturnViewState` without a case here would
+    // otherwise fall out of this function as `undefined` — `tsc` does not catch
+    // it (no `noImplicitReturns`), and neither does the linter. This makes the
+    // omission a compile error instead of a blank screen at the reveal.
+    default: {
+      const unhandled: never = state;
+      throw new Error(`Unhandled return-view state: ${String(unhandled)}`);
+    }
   }
 }

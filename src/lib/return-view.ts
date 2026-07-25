@@ -44,11 +44,26 @@ export const RETURN_COPY = {
     "That's everything — find each other, and pray together. Nothing else to do on this page.",
   /**
    * n=1 (§4 small-n): the lone participant. Never self-matched, and told
-   * gently rather than left staring at an empty screen.
+   * gently rather than left staring at an empty screen. This copy states a
+   * *cause* — "yours was the only request" — so it may only be shown when that
+   * is actually known to be true: the pairing froze and produced no groups at
+   * all. When the pairing did pair the room and merely left this entry out,
+   * {@link unpairedHeading} is the honest screen instead.
    */
   loneHeading: "Not enough people this time",
   loneBody:
     "Yours was the only request in when we closed, so there was no one to pair you with. Find an organizer — they'll pray with you.",
+  /**
+   * The pairing ran and produced groups, but this participant is in none of
+   * them. Rare and not supposed to happen — an entry accepted a hair before the
+   * reveal can miss the pairing's cutoff, since the freeze filters on the
+   * database's own `createdAt` stamp while the submit gate reads the app clock.
+   * Claims no cause, because the page cannot know it; hands the participant to
+   * the one thing that reliably fixes it in a room, which is a person (§10).
+   */
+  unpairedHeading: "We couldn't pair you",
+  unpairedBody:
+    "Something went wrong matching you this time — this isn't your fault, and your request wasn't seen by anyone else. Find an organizer and they'll pair you up in the room.",
   /**
    * Reveal time has passed but the pairing has not been frozen yet (the freeze
    * triggers land in #22). Accurate for the seconds-long gap: the reveal is
@@ -57,6 +72,15 @@ export const RETURN_COPY = {
   pendingHeading: "It's reveal time",
   pendingBody:
     "Who you're praying for will appear here in just a moment — this page will catch up on its own.",
+  /**
+   * Replaces {@link pendingBody}'s promise once the page has stopped checking
+   * on its own. Nothing about the wait is the participant's fault, so this hands
+   * them the two things that still work — a reload, and a person.
+   */
+  pendingStalledBody:
+    "This is taking longer than it should. Try again — and if it still doesn't change, find an organizer and they'll sort it out with you.",
+  /** The manual retry offered once the automatic checking has stopped. */
+  pendingRetryLabel: "Check again",
 } as const;
 
 /**
@@ -66,12 +90,20 @@ export const RETURN_COPY = {
  * - `submit` — no entry on this device, before the reveal: the §7.1 form.
  * - `pre-reveal` — own entry, before the reveal: the §7.3 guided steps.
  * - `paired` — own entry, after the reveal, in a frozen group: partner card(s).
- * - `lone` — own entry, after the freeze, still no partner: the n=1 case (§4).
+ * - `lone` — the pairing froze and produced no groups at all: the n=1 case (§4).
+ * - `unpaired` — the pairing froze and produced groups, but none containing this
+ *   entry. Shouldn't happen; reported without inventing a cause.
  * - `pending-freeze` — after the reveal but nothing frozen yet: a brief wait.
  * - `recover` — no entry, after the reveal: recovery-code entry (§7.3, §7.4).
  */
 export type ReturnViewState =
-  "submit" | "pre-reveal" | "paired" | "lone" | "pending-freeze" | "recover";
+  | "submit"
+  | "pre-reveal"
+  | "paired"
+  | "lone"
+  | "unpaired"
+  | "pending-freeze"
+  | "recover";
 
 export interface ReturnViewInputs {
   /** Whether this device resolved an entry of its own (cookie, §6, or §7.4). */
@@ -82,6 +114,14 @@ export interface ReturnViewInputs {
   pairingFrozen: boolean;
   /** How many partners the caller's frozen group holds (0 for none). */
   partnerCount: number;
+  /**
+   * Whether the frozen pairing produced **any** group in this session (a bare
+   * count from {@link countGroups} — never membership or request content). This
+   * is what separates "yours was the only request" from "the room got paired and
+   * you were left out": both look identical from `partnerCount` alone. Only
+   * consulted when the caller has no partner after the freeze.
+   */
+  sessionHasGroups: boolean;
 }
 
 /**
@@ -91,9 +131,17 @@ export interface ReturnViewInputs {
  *
  * The reveal gate is checked **before** anything derived from the pairing, so a
  * partner's request cannot be served early even if a pairing were somehow frozen
- * ahead of the reveal instant. Distinguishing `lone` from `pending-freeze` needs
- * `pairingFrozen`: an empty group reads as "no one to pair you with" only once
- * the write-once freeze has actually happened.
+ * ahead of the reveal instant.
+ *
+ * Having no partner is deliberately **three** different situations, never one.
+ * `partnerCount === 0` on its own says nothing about why, so it is never reported
+ * as a cause: before the freeze it means the pairing hasn't run
+ * (`pending-freeze`); after a freeze that produced no groups at all it genuinely
+ * means this was the only submission (`lone`, §4 small-n); after a freeze that
+ * *did* pair the room it means this entry was left out (`unpaired`) — which the
+ * two-clock gap between the submit cutoff and the pairing's `createdAt` filter
+ * makes reachable for a last-second entry. Collapsing the last two would tell a
+ * person in a paired room that they were here alone.
  */
 export function selectReturnState(inputs: ReturnViewInputs): ReturnViewState {
   if (!inputs.revealOpen) {
@@ -105,7 +153,10 @@ export function selectReturnState(inputs: ReturnViewInputs): ReturnViewState {
   if (inputs.partnerCount > 0) {
     return "paired";
   }
-  return inputs.pairingFrozen ? "lone" : "pending-freeze";
+  if (!inputs.pairingFrozen) {
+    return "pending-freeze";
+  }
+  return inputs.sessionHasGroups ? "unpaired" : "lone";
 }
 
 /** The full name a partner reads to find someone in the room (#13). */
