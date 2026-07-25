@@ -7,11 +7,8 @@ const LIVE_POLL_INTERVAL_MS = 1_000;
 const FAILED_POLL_INTERVAL_MS = 2_000;
 const MAX_FAILED_POLL_INTERVAL_MS = 10_000;
 
-export function getLiveSnapshotPollDelay(
-  isDisconnected: boolean,
-  failureCount: number,
-) {
-  return isDisconnected
+export function getLiveSnapshotPollDelay(failureCount: number) {
+  return failureCount > 0
     ? Math.min(
         MAX_FAILED_POLL_INTERVAL_MS,
         FAILED_POLL_INTERVAL_MS * failureCount,
@@ -54,18 +51,12 @@ export function useLiveSnapshot<T extends { revision: number }>(
         await refresh();
       }
       if (!stopped) {
-        const delay = getLiveSnapshotPollDelay(
-          isDisconnected,
-          failures.current,
-        );
+        const delay = getLiveSnapshotPollDelay(failures.current);
         timeout = setTimeout(poll, delay);
       }
     }
 
-    timeout = setTimeout(
-      poll,
-      getLiveSnapshotPollDelay(isDisconnected, failures.current),
-    );
+    timeout = setTimeout(poll, getLiveSnapshotPollDelay(failures.current));
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refresh();
     };
@@ -76,7 +67,7 @@ export function useLiveSnapshot<T extends { revision: number }>(
       clearTimeout(timeout);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isDisconnected, refresh]);
+  }, [refresh]);
 
   return { snapshot, setSnapshot, refresh, isDisconnected };
 }
