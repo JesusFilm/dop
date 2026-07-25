@@ -5,10 +5,12 @@ import {
   countSubmissions,
   createSession,
   createSubmission,
+  findCurrentSession,
   findSessionBySetupPath,
   findSubmissionByDeviceToken,
   findSubmissionByRecoveryCode,
   getGroupAssignment,
+  updateSubmission,
   type DataClient,
 } from "@/lib/repository";
 
@@ -84,6 +86,20 @@ describe("findSessionBySetupPath", () => {
   });
 });
 
+describe("findCurrentSession", () => {
+  it("returns the single session, most recent first for the reuse seam", async () => {
+    const findFirst = vi.fn().mockResolvedValue({ id: "sess_1" });
+    const client = fakeClient({ session: { findFirst } });
+
+    const result = await findCurrentSession(client);
+
+    expect(findFirst).toHaveBeenCalledWith({
+      orderBy: { createdAt: "desc" },
+    });
+    expect(result).toEqual({ id: "sess_1" });
+  });
+});
+
 describe("createSubmission", () => {
   it("writes both required name fields and the request", async () => {
     const create = vi.fn().mockResolvedValue({ id: "sub_1" });
@@ -108,6 +124,32 @@ describe("createSubmission", () => {
         request: "wisdom for a decision",
       },
     });
+  });
+});
+
+describe("updateSubmission", () => {
+  it("updates only the editable fields, never the token or recovery code", async () => {
+    const update = vi.fn().mockResolvedValue({ id: "sub_1" });
+    const client = fakeClient({ submission: { update } });
+
+    await updateSubmission(client, {
+      id: "sub_1",
+      firstName: "Grace",
+      lastName: "Hopper",
+      request: "an updated request",
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "sub_1" },
+      data: {
+        firstName: "Grace",
+        lastName: "Hopper",
+        request: "an updated request",
+      },
+    });
+    const data = update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("deviceToken");
+    expect(data).not.toHaveProperty("recoveryCode");
   });
 });
 
@@ -333,10 +375,12 @@ describe("data-access surface (Privacy #3)", () => {
         "countSubmissions",
         "createSession",
         "createSubmission",
+        "findCurrentSession",
         "findSessionBySetupPath",
         "findSubmissionByDeviceToken",
         "findSubmissionByRecoveryCode",
         "getGroupAssignment",
+        "updateSubmission",
       ].sort(),
     );
     expect(

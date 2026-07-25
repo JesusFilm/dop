@@ -42,6 +42,16 @@ export interface CreateSessionInput {
   timeZone?: string;
 }
 
+export interface UpdateSubmissionInput {
+  /** The submission id, located owner-scoped via the caller's own cookie (§6). */
+  id: string;
+  /** Required (#13). */
+  firstName: string;
+  /** Required (#13). */
+  lastName: string;
+  request: string;
+}
+
 export interface CreateSubmissionInput {
   sessionId: string;
   /** Cookie value; one submission per device per session (§6). */
@@ -87,6 +97,18 @@ export function createSession(
   });
 }
 
+/**
+ * The single current session (submit landing, §7.1). The app is single-session
+ * (§3): a scanned QR opens the app root with no setup path, so this resolves
+ * "the one session" — the most recently created, tolerating the reuse seam
+ * where a future event inserts another Session. Null before setup has run.
+ */
+export function findCurrentSession(
+  client: DataClient,
+): Promise<Session | null> {
+  return client.session.findFirst({ orderBy: { createdAt: "desc" } });
+}
+
 /** Looks up a session by its unguessable setup path (setup page load). */
 export function findSessionBySetupPath(
   client: DataClient,
@@ -109,6 +131,27 @@ export function createSubmission(
       sessionId: input.sessionId,
       deviceToken: input.deviceToken,
       recoveryCode: input.recoveryCode,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      request: input.request,
+    },
+  });
+}
+
+/**
+ * Updates a returning participant's editable fields before the reveal (§6:
+ * "returning on the same phone before the reveal time → name/request
+ * editable"). Located by submission id, which the caller resolves owner-scoped
+ * from their own cookie first; the device token and recovery code are never
+ * touched. The reveal cutoff is enforced by the caller, not here.
+ */
+export function updateSubmission(
+  client: DataClient,
+  input: UpdateSubmissionInput,
+): Promise<Submission> {
+  return client.submission.update({
+    where: { id: input.id },
+    data: {
       firstName: input.firstName,
       lastName: input.lastName,
       request: input.request,
