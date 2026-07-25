@@ -1,3 +1,8 @@
+// Loads DATABASE_URL from `.env` when a human runs this by hand (the missed-cron
+// fallback). No-ops on Railway, which has no `.env` and whose injected variables
+// dotenv never overwrites.
+import "dotenv/config";
+
 import { disconnectDatabase, getDatabase } from "../src/lib/db";
 import { purgeDueSessions } from "../src/lib/purge";
 
