@@ -13,6 +13,14 @@ Issues and PRDs live as **GitHub issues** in `JesusFilm/dop`, managed via the `g
 Read `CONTEXT.md` and the relevant ADRs before changing application behavior.
 Preserve their terminology and surface conflicts instead of silently overriding decisions.
 
+`CONCEPTS.md` at the repo root holds the shared domain vocabulary (entities, named
+processes, status concepts) — relevant when orienting to the codebase or discussing
+domain concepts.
+
+`docs/solutions/` holds documented solutions to past problems (bugs, best practices,
+workflow patterns), organized by category with YAML frontmatter (`module`, `tags`,
+`problem_type`) — relevant when implementing or debugging in documented areas.
+
 ### Compound Engineering
 
 Use the Compound Engineering plugin from Evry Incorporated for substantive engineering work:
