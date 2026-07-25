@@ -49,3 +49,5 @@ The rule that, once the app clock reaches the Reveal time, the server rejects ne
 ### Purge
 
 The next-morning deletion of a Session's Submissions. After it runs, the live submission count reads zero, which doubles as the verification that data is gone.
+
+A zero is verification only when the signal names what it inspected. A count or log line that does not identify its database and Session can read zero because it looked in the wrong place — see [Destructive jobs must name the target they acted on](docs/solutions/design-patterns/destructive-jobs-must-name-their-target.md).
