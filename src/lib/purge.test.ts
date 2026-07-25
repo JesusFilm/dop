@@ -1,22 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { purgeDueSessions } from "@/lib/purge";
-import type { DataClient } from "@/lib/repository";
+import { countSubmissions, type DataClient } from "@/lib/repository";
+
+interface FakeSession {
+  id: string;
+  name: string;
+  purgeAfter: Date;
+}
 
 /**
- * Builds a fake {@link DataClient} whose delete/read delegates record calls.
- * Rows are held in memory so a second purge run can be asserted as a no-op.
+ * Builds a fake {@link DataClient} over an in-memory row store, so a purge can
+ * be asserted through the same reads the app uses — including the setup page's
+ * submission count (the purge-verification view, §8.4) — and so a second run can
+ * be asserted as a no-op.
  */
 function fakeClient(
-  sessions: Array<{ id: string; name: string; purgeAfter: Date }>,
+  sessions: FakeSession[],
   rows: { submissions: Record<string, number>; groups: Record<string, number> },
 ) {
   const findMany = vi.fn(
     async ({ where }: { where: { purgeAfter: { lte: Date } } }) =>
-      sessions.filter(
-        (session) =>
-          session.purgeAfter.getTime() <= where.purgeAfter.lte.getTime(),
-      ),
+      sessions
+        .filter(
+          (session) =>
+            session.purgeAfter.getTime() <= where.purgeAfter.lte.getTime(),
+        )
+        .map((session) => ({ id: session.id, name: session.name })),
   );
 
   const deleteMany = (bucket: Record<string, number>) =>
@@ -28,22 +38,44 @@ function fakeClient(
 
   const submissionDeleteMany = deleteMany(rows.submissions);
   const groupDeleteMany = deleteMany(rows.groups);
+  const count = vi.fn(
+    async ({ where }: { where: { sessionId: string } }) =>
+      rows.submissions[where.sessionId] ?? 0,
+  );
+  // Prisma's array form of $transaction takes already-built delegate promises
+  // and runs them as one unit; awaiting them together models that closely
+  // enough for these tests while preserving construction order.
+  const transaction = vi.fn(
+    async (operations: Promise<unknown>[]) => await Promise.all(operations),
+  );
 
   const client = {
     session: { findMany },
-    submission: { deleteMany: submissionDeleteMany },
+    submission: { deleteMany: submissionDeleteMany, count },
     group: { deleteMany: groupDeleteMany },
+    $transaction: transaction,
   } as unknown as DataClient;
 
-  return { client, findMany, submissionDeleteMany, groupDeleteMany };
+  return {
+    client,
+    findMany,
+    submissionDeleteMany,
+    groupDeleteMany,
+    transaction,
+  };
 }
 
 const PURGE_AFTER = new Date("2026-07-27T18:00:00.000Z"); // 06:00 Tue NZST
+const DAY_OF_PRAYER: FakeSession = {
+  id: "sess_1",
+  name: "Day of Prayer",
+  purgeAfter: PURGE_AFTER,
+};
 
 describe("purgeDueSessions", () => {
   it("deletes the session's submissions once the purge instant has passed", async () => {
     const { client, submissionDeleteMany, groupDeleteMany } = fakeClient(
-      [{ id: "sess_1", name: "Day of Prayer", purgeAfter: PURGE_AFTER }],
+      [DAY_OF_PRAYER],
       { submissions: { sess_1: 97 }, groups: { sess_1: 48 } },
     );
 
@@ -72,9 +104,22 @@ describe("purgeDueSessions", () => {
     });
   });
 
+  it("leaves the setup-page count reading 0 — the purge-verification view", async () => {
+    const { client } = fakeClient([DAY_OF_PRAYER], {
+      submissions: { sess_1: 97 },
+      groups: { sess_1: 48 },
+    });
+
+    expect(await countSubmissions(client, "sess_1")).toBe(97);
+
+    await purgeDueSessions(client, new Date("2026-07-27T18:00:30.000Z"));
+
+    expect(await countSubmissions(client, "sess_1")).toBe(0);
+  });
+
   it("leaves a session alone before its purge instant", async () => {
     const { client, findMany, submissionDeleteMany } = fakeClient(
-      [{ id: "sess_1", name: "Day of Prayer", purgeAfter: PURGE_AFTER }],
+      [DAY_OF_PRAYER],
       { submissions: { sess_1: 97 }, groups: { sess_1: 48 } },
     );
 
@@ -87,15 +132,18 @@ describe("purgeDueSessions", () => {
     expect(submissionDeleteMany).not.toHaveBeenCalled();
     expect(report.sessions).toEqual([]);
     expect(report.submissionsDeleted).toBe(0);
+    // Nothing due, nothing deleted — and the count is untouched.
+    expect(await countSubmissions(client, "sess_1")).toBe(97);
   });
 
-  it("deletes the derived groups before the submissions they reference", async () => {
+  it("deletes the groups and submissions as one transaction, groups first", async () => {
     const order: string[] = [];
+    const transaction = vi.fn(
+      async (operations: Promise<unknown>[]) => await Promise.all(operations),
+    );
     const client = {
       session: {
-        findMany: vi.fn(async () => [
-          { id: "sess_1", name: "Day of Prayer", purgeAfter: PURGE_AFTER },
-        ]),
+        findMany: vi.fn(async () => [{ id: "sess_1", name: "Day of Prayer" }]),
       },
       submission: {
         deleteMany: vi.fn(async () => {
@@ -109,18 +157,22 @@ describe("purgeDueSessions", () => {
           return { count: 1 };
         }),
       },
+      $transaction: transaction,
     } as unknown as DataClient;
 
     await purgeDueSessions(client, new Date("2026-07-28T00:00:00.000Z"));
 
+    // A half-done purge that left the requests behind would be a Privacy #3
+    // failure, so both deletes go through one transaction.
+    expect(transaction).toHaveBeenCalledTimes(1);
     expect(order).toEqual(["groups", "submissions"]);
   });
 
   it("is idempotent — a second run reports zero deletions", async () => {
-    const { client } = fakeClient(
-      [{ id: "sess_1", name: "Day of Prayer", purgeAfter: PURGE_AFTER }],
-      { submissions: { sess_1: 97 }, groups: { sess_1: 48 } },
-    );
+    const { client } = fakeClient([DAY_OF_PRAYER], {
+      submissions: { sess_1: 97 },
+      groups: { sess_1: 48 },
+    });
 
     await purgeDueSessions(client, new Date("2026-07-28T00:00:00.000Z"));
     const second = await purgeDueSessions(
@@ -142,10 +194,10 @@ describe("purgeDueSessions", () => {
   it("purges every due session and totals the submissions removed", async () => {
     const { client } = fakeClient(
       [
-        { id: "sess_1", name: "Day of Prayer", purgeAfter: PURGE_AFTER },
+        DAY_OF_PRAYER,
         {
           id: "sess_2",
-          name: "Day of Prayer (reuse)",
+          name: "Day of Prayer (earlier event)",
           purgeAfter: new Date("2026-07-26T18:00:00.000Z"),
         },
       ],

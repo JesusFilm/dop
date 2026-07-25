@@ -23,7 +23,7 @@ async function main() {
 
     for (const session of report.sessions) {
       console.log(
-        `Auto-purge: session ${session.sessionId} — deleted ${session.submissionsDeleted} submission(s), ${session.groupsDeleted} group(s).`,
+        `Auto-purge: "${session.name}" (${session.sessionId}) — deleted ${session.submissionsDeleted} submission(s), ${session.groupsDeleted} group(s).`,
       );
     }
     console.log(

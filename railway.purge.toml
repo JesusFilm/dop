@@ -1,25 +1,33 @@
 # Railway config for the **auto-purge cron service** (§8.4, §10, #8).
 #
-# This is a second service in the same Railway project, deployed from this same
-# repo, with its config-as-code path pointed at this file instead of
-# `railway.toml` (see README, "Auto-purge"). It has no web server and no
-# healthcheck: Railway starts the container on the schedule, `pnpm purge` runs
-# once, and the container exits.
+# Railway config-as-code is per service, so the second service in the project
+# cannot share `railway.toml` with the web app: it points its config path here
+# instead (see README, "Auto-purge"). `railway.toml` stays the app service's
+# deploy config.
+#
+# It runs `pnpm purge` against the database on the private network rather than
+# calling an in-app HTTP route, which is what the scaffold README originally
+# sketched. Reason: a route that deletes every due session's requests would be a
+# destructive, internet-reachable endpoint needing its own shared secret, and
+# the cron service already has `DATABASE_URL`.
 #
 # The schedule is only a **trigger** — the app's own clock owns the purge moment,
 # exactly as it does for the reveal (§5). `pnpm purge` deletes only sessions
-# whose organizer-derived `purgeAfter` instant has already passed, so an hourly
-# trigger is idempotent, a no-op when nothing is due, and self-heals a missed or
-# drifted run within the hour. That also keeps it correct across NZDT/NZST
-# without a DST-specific expression.
+# whose `purgeAfter` instant has already passed, so the trigger is idempotent, a
+# no-op when nothing is due, and self-heals a missed or drifted run.
 
 [build]
 builder = "NIXPACKS"
+# The job needs the generated Prisma client, not the Next.js server bundle, so
+# skip the app's `next build` on this service.
+buildCommand = "pnpm exec prisma generate"
 
 [deploy]
 startCommand = "pnpm purge"
-# Hourly, UTC. The next-morning purge fires on the first run at/after the
-# session's purgeAfter (Monday's event: Tue 06:00 Pacific/Auckland = Mon 18:00 UTC).
+# Hourly, UTC. `purgeAfter` is always the top of an hour (06:00 in the session's
+# zone, `PURGE_HOUR`), so an hourly trigger lands *on* the configured instant —
+# 18:00 UTC in NZST, 17:00 UTC in NZDT — with no DST-specific expression, and
+# every other hour of the day is a no-op sweep.
 cronSchedule = "0 * * * *"
 # A cron run is a one-shot job: a completed run must not be restarted, and a
 # failed run is retried by the next hourly trigger rather than by a restart loop.

@@ -5,13 +5,13 @@ import {
   countSubmissions,
   createSession,
   createSubmission,
-  deleteSessionData,
   findCurrentSession,
   findSessionBySetupPath,
   findSessionsDueForPurge,
   findSubmissionByDeviceToken,
   findSubmissionByRecoveryCode,
   getGroupAssignment,
+  purgeSessionSubmissions,
   updateSubmission,
   type DataClient,
 } from "@/lib/repository";
@@ -24,11 +24,13 @@ function fakeClient(overrides: {
   session?: Partial<DataClient["session"]>;
   submission?: Partial<DataClient["submission"]>;
   group?: Partial<DataClient["group"]>;
+  transaction?: (operations: Promise<unknown>[]) => Promise<unknown[]>;
 }): DataClient {
   return {
     session: overrides.session,
     submission: overrides.submission,
     group: overrides.group,
+    $transaction: overrides.transaction,
   } as unknown as DataClient;
 }
 
@@ -211,22 +213,26 @@ describe("findSessionsDueForPurge", () => {
 
     expect(findMany).toHaveBeenCalledWith({
       where: { purgeAfter: { lte: now } },
-      select: { id: true, name: true, purgeAfter: true },
+      select: { id: true, name: true },
       orderBy: { purgeAfter: "asc" },
     });
   });
 });
 
-describe("deleteSessionData", () => {
-  it("deletes the session's groups and submissions and reports the counts", async () => {
+describe("purgeSessionSubmissions", () => {
+  it("deletes the session's groups and submissions in one transaction and reports the counts", async () => {
     const submissionDeleteMany = vi.fn().mockResolvedValue({ count: 97 });
     const groupDeleteMany = vi.fn().mockResolvedValue({ count: 48 });
+    const transaction = vi.fn(
+      async (operations: Promise<unknown>[]) => await Promise.all(operations),
+    );
     const client = fakeClient({
       submission: { deleteMany: submissionDeleteMany },
       group: { deleteMany: groupDeleteMany },
+      transaction,
     });
 
-    const result = await deleteSessionData(client, "sess_1");
+    const result = await purgeSessionSubmissions(client, "sess_1");
 
     expect(groupDeleteMany).toHaveBeenCalledWith({
       where: { sessionId: "sess_1" },
@@ -234,6 +240,8 @@ describe("deleteSessionData", () => {
     expect(submissionDeleteMany).toHaveBeenCalledWith({
       where: { sessionId: "sess_1" },
     });
+    // Either both row sets go or neither does (Privacy #3).
+    expect(transaction).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ submissionsDeleted: 97, groupsDeleted: 48 });
   });
 
@@ -243,9 +251,12 @@ describe("deleteSessionData", () => {
       session: { delete: sessionDelete, deleteMany: sessionDelete },
       submission: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
       group: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      transaction: vi.fn(
+        async (operations: Promise<unknown>[]) => await Promise.all(operations),
+      ),
     });
 
-    await deleteSessionData(client, "sess_1");
+    await purgeSessionSubmissions(client, "sess_1");
 
     expect(sessionDelete).not.toHaveBeenCalled();
   });
@@ -427,13 +438,13 @@ describe("data-access surface (Privacy #3)", () => {
         "countSubmissions",
         "createSession",
         "createSubmission",
-        "deleteSessionData",
         "findCurrentSession",
         "findSessionBySetupPath",
         "findSessionsDueForPurge",
         "findSubmissionByDeviceToken",
         "findSubmissionByRecoveryCode",
         "getGroupAssignment",
+        "purgeSessionSubmissions",
         "updateSubmission",
       ].sort(),
     );

@@ -1,7 +1,8 @@
 import {
-  deleteSessionData,
   findSessionsDueForPurge,
+  purgeSessionSubmissions,
   type DataClient,
+  type PurgeCounts,
 } from "@/lib/repository";
 
 /**
@@ -22,11 +23,9 @@ import {
  */
 
 /** What the job did to one session. */
-export interface SessionPurgeResult {
+export interface SessionPurgeResult extends PurgeCounts {
   sessionId: string;
   name: string;
-  submissionsDeleted: number;
-  groupsDeleted: number;
 }
 
 /** The job's outcome, shaped for a log line and the operator's verification. */
@@ -50,13 +49,8 @@ export async function purgeDueSessions(
 
   const sessions: SessionPurgeResult[] = [];
   for (const session of due) {
-    const deleted = await deleteSessionData(client, session.id);
-    sessions.push({
-      sessionId: session.id,
-      name: session.name,
-      submissionsDeleted: deleted.submissionsDeleted,
-      groupsDeleted: deleted.groupsDeleted,
-    });
+    const counts = await purgeSessionSubmissions(client, session.id);
+    sessions.push({ sessionId: session.id, name: session.name, ...counts });
   }
 
   return {

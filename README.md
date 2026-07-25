@@ -106,9 +106,18 @@ that verification view renderable. Only the submissions and their derived groups
 are deleted.
 
 The purge instant (`purgeAfter`) is derived at setup from the event date: the
-next day at **06:00 Pacific/Auckland**. The schedule below is only a **trigger** —
+next day at **06:00 Pacific/Auckland**. The cron schedule is only a **trigger** —
 `pnpm purge` deletes only sessions whose `purgeAfter` has already passed, so it
-is idempotent, a no-op when nothing is due, and self-heals a missed run.
+is idempotent, a no-op when nothing is due, and self-heals a missed run. It runs
+hourly: because `purgeAfter` is always the top of an hour, an hourly trigger
+lands on the configured instant in both NZST and NZDT with no DST-specific
+expression.
+
+The cron service runs `pnpm purge` against Postgres on the private network
+rather than calling an in-app route (as the scaffold notes above once sketched):
+a route that deletes requests would be a destructive, internet-reachable
+endpoint needing its own shared secret, and the cron service already has
+`DATABASE_URL`.
 
 ### One-time Railway setup
 

@@ -69,6 +69,7 @@ export default async function SetupPage({
   const url = submissionUrl(origin);
   const svg = await renderQrSvg(url);
   const initialCount = await countSubmissions(db, session.id);
+  const purgeTime = formatZonedDateTime(session.purgeAfter, session.timeZone);
 
   return (
     <main style={pageStyle}>
@@ -116,9 +117,7 @@ export default async function SetupPage({
           </div>
           <div>
             <dt style={{ color: "#555", display: "inline" }}>Data purge: </dt>
-            <dd style={{ display: "inline", margin: 0 }}>
-              {formatZonedDateTime(session.purgeAfter, session.timeZone)}
-            </dd>
+            <dd style={{ display: "inline", margin: 0 }}>{purgeTime}</dd>
           </div>
         </dl>
         <p style={{ color: "#888", fontSize: "0.85rem", margin: 0 }}>
@@ -148,9 +147,8 @@ export default async function SetupPage({
             textAlign: "center",
           }}
         >
-          After the data purge on{" "}
-          {formatZonedDateTime(session.purgeAfter, session.timeZone)} this count
-          reads 0 — that is your confirmation the requests are deleted.
+          After the data purge on {purgeTime} this count reads 0 — that is your
+          confirmation the requests are deleted.
         </p>
       </section>
     </main>
