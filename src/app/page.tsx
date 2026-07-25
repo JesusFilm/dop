@@ -88,10 +88,12 @@ export default async function Home() {
   // Returning on the same phone (§6).
   if (existing) {
     if (revealOpen) {
+      // Reveal time has arrived. The partner view itself lands in #9; until then
+      // this is an accurate interim placeholder for someone who already has an
+      // entry — not a "come back later" message (the reveal is now, not later).
       return (
-        <Notice title="Your request is in">
-          Come back here after the reveal time and we&rsquo;ll show you who
-          you&rsquo;re praying for.
+        <Notice title="It&rsquo;s reveal time">
+          Who you&rsquo;re praying for will appear here in just a moment.
         </Notice>
       );
     }
