@@ -6,9 +6,11 @@ import {
   findCurrentSession,
   findSubmissionByDeviceToken,
 } from "@/lib/repository";
-import { DEVICE_TOKEN_COOKIE, isBeforeReveal, SUBMIT_COPY } from "@/lib/submit";
+import { isRevealOpen, msUntilReveal } from "@/lib/reveal";
+import { DEVICE_TOKEN_COOKIE, SUBMIT_COPY } from "@/lib/submit";
 import { formatZonedDateTime } from "@/lib/time";
 
+import { Countdown } from "./Countdown";
 import { editAction, submitAction } from "./actions";
 import { SubmitForm } from "./SubmitForm";
 
@@ -48,10 +50,15 @@ function Notice({ title, children }: { title: string; children: ReactNode }) {
  * - **No session yet** — a gentle "not open" notice.
  * - **No entry, before reveal** — the warm submit screen (§7.1): starter chips,
  *   two required name fields (#13), request, consent line.
- * - **Own entry, before reveal** — the pre-reveal return view (§6): the entry
- *   pre-filled with name/request editable.
+ * - **Own entry, before reveal** — the pre-reveal return view (§6): a live
+ *   countdown to the reveal (§7.3, #20) plus the entry pre-filled with
+ *   name/request editable.
  * - **After the reveal** — submissions are hard-closed (§5/§6); the full reveal
- *   view and countdown land in later tickets (§7.3, steps 6/9).
+ *   view is gated on the app clock and lands in a later ticket (§7.3, step 9).
+ *
+ * The reveal boundary is decided by {@link isRevealOpen} against the app's own
+ * clock (§5, #20) — never a scheduler trigger — so the gate is sharp regardless
+ * of cron drift.
  */
 export default async function Home() {
   const db = getDatabase();
@@ -71,12 +78,16 @@ export default async function Home() {
     ? await findSubmissionByDeviceToken(db, session.id, deviceToken)
     : null;
 
-  const beforeReveal = isBeforeReveal(new Date(), session.revealAt);
+  // The app clock owns the sharp reveal moment (§5): read it once, gate every
+  // branch on it, and derive the countdown's anchor from the same reading so the
+  // countdown matches the server's gate decision.
+  const now = new Date();
+  const revealOpen = isRevealOpen(now, session.revealAt);
   const revealLabel = formatZonedDateTime(session.revealAt, session.timeZone);
 
   // Returning on the same phone (§6).
   if (existing) {
-    if (!beforeReveal) {
+    if (revealOpen) {
       return (
         <Notice title="Your request is in">
           Come back here after the reveal time and we&rsquo;ll show you who
@@ -88,9 +99,17 @@ export default async function Home() {
     return (
       <main style={pageStyle}>
         <header
-          style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
+            alignItems: "flex-start",
+          }}
         >
           <h1 style={{ fontSize: "1.5rem", margin: 0 }}>Your request is in</h1>
+          <Countdown
+            initialRemainingMs={msUntilReveal(now, session.revealAt)}
+          />
           <p style={{ color: "#555", margin: 0 }}>
             You can change your name or request any time before {revealLabel}.
           </p>
@@ -110,7 +129,7 @@ export default async function Home() {
   }
 
   // No entry yet: hard-closed after the reveal instant (§6).
-  if (!beforeReveal) {
+  if (revealOpen) {
     return (
       <Notice title="Submissions have closed">
         The reveal time ({revealLabel}) has passed. Find an organizer — they can
