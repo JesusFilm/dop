@@ -23,11 +23,28 @@ import { useRouter } from "next/navigation";
  */
 const REFRESH_INTERVAL_MS = 3000;
 
+/**
+ * How many refreshes to attempt before giving up — roughly two minutes' worth.
+ * The gap this covers should be seconds; if it hasn't closed by now the freeze
+ * is not coming on its own (the organizer's backstop button is the answer, §5),
+ * and a roomful of phones polling a server forever is worse than a page that
+ * needs a manual reload.
+ */
+const MAX_REFRESHES = 40;
+
 export function AutoRefresh() {
   const router = useRouter();
 
   useEffect(() => {
-    const timer = setInterval(() => router.refresh(), REFRESH_INTERVAL_MS);
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (attempts > MAX_REFRESHES) {
+        clearInterval(timer);
+        return;
+      }
+      router.refresh();
+    }, REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [router]);
 

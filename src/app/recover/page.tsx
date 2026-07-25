@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { RECOVERY_COPY } from "@/lib/recovery";
+
 import { RecoveryPanel } from "../RecoveryPanel";
 
 /**
@@ -33,7 +35,7 @@ export default function RecoverPage() {
         href="/"
         style={{ color: "#3b5bdb", fontSize: "0.9rem", textAlign: "center" }}
       >
-        Back
+        {RECOVERY_COPY.backLabel}
       </Link>
     </main>
   );

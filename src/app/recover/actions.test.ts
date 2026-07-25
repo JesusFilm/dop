@@ -128,9 +128,10 @@ describe("recoverAction", () => {
     expect(setCalls).toEqual([]);
   });
 
-  it("sends a device that already holds its own entry to the return view", async () => {
+  it("tells a device that already holds its own entry, rather than silently redirecting", async () => {
     // This phone has its own submission, so there is nothing to restore — and
-    // overwriting its cookie would lose that entry. Show what it already has.
+    // overwriting its cookie would cost them access to that entry. Saying so
+    // beats dropping them on a return view as if the code had been used.
     vi.mocked(findCurrentSession).mockResolvedValue(SESSION);
     const { store, setCalls } = fakeCookies({
       name: DEVICE_TOKEN_COOKIE,
@@ -141,8 +142,9 @@ describe("recoverAction", () => {
       id: "own-sub",
     } as never);
 
-    await expect(run("K7MP2Q")).rejects.toThrow("REDIRECT:/");
+    const state = await run("K7MP2Q");
 
+    expect(state.error).toMatch(/already has a request/i);
     expect(findSubmissionByRecoveryCode).not.toHaveBeenCalled();
     expect(setCalls).toEqual([]);
   });

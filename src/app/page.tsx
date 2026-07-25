@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { getDatabase } from "@/lib/db";
@@ -12,7 +11,11 @@ import {
 } from "@/lib/repository";
 import { isRevealOpen, msUntilReveal } from "@/lib/reveal";
 import { partnersOf, RETURN_COPY, selectReturnState } from "@/lib/return-view";
-import { DEVICE_TOKEN_COOKIE, SUBMIT_COPY } from "@/lib/submit";
+import {
+  DEVICE_TOKEN_COOKIE,
+  submissionsClosedLine,
+  SUBMIT_COPY,
+} from "@/lib/submit";
 import { formatZonedDateTime, formatZonedTime } from "@/lib/time";
 
 import { AutoRefresh } from "./AutoRefresh";
@@ -166,16 +169,17 @@ export default async function Home() {
       );
 
     // No entry on this device, and submissions have hard-closed (§6): the only
-    // way forward is restoring an existing entry (§7.3, §7.4).
+    // way forward is restoring an existing entry (§7.3, §7.4). This visitor may
+    // equally be a latecomer who never submitted (§10), so the heading states
+    // the cutoff — the thing that is certainly true — and offers recovery under
+    // it rather than assuming they are on a second phone.
     case "recover":
       return (
         <main style={pageStyle}>
-          <RecoveryPanel>
-            <p style={{ color: "#555", margin: 0, lineHeight: 1.5 }}>
-              Submissions closed at {revealLabel}, so a new request can&rsquo;t
-              be added now.
-            </p>
-          </RecoveryPanel>
+          <RecoveryPanel
+            heading={SUBMIT_COPY.closedHeading}
+            lead={submissionsClosedLine(revealLabel)}
+          />
         </main>
       );
 

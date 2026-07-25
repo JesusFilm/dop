@@ -34,6 +34,15 @@ export const RECOVERY_COPY = {
   pending: "Restoring…",
   /** The link label offered on pre-reveal surfaces that show the submit form. */
   linkLabel: "Already shared your request on another phone?",
+  /** Returns from the standalone recovery page to the participant landing. */
+  backLabel: "Back",
+  /**
+   * Shown when the phone asking to recover already holds its own entry: there
+   * is nothing to restore, and adopting another entry's token would cost them
+   * access to their own.
+   */
+  alreadyOnThisPhone:
+    "This phone already has a request on it — you're all set. Head back to see it.",
 } as const;
 
 export type RecoveryCodeResult =
@@ -60,8 +69,9 @@ const ALPHABET_SET = new Set(RECOVERY_ALPHABET);
  * round-trip and a "we couldn't find that code" that reads like the entry is
  * gone. A well-formed code that simply doesn't exist is the caller's concern.
  *
- * Server-authoritative: the form's `pattern`/`maxLength` attributes mirror this
- * only as a convenience.
+ * The sole authority on what a code may look like: the entry form deliberately
+ * carries no browser `pattern`, so nothing on the client can reject a typing
+ * this would have accepted.
  */
 export function validateRecoveryCode(raw: unknown): RecoveryCodeResult {
   const code = normalizeRecoveryCode(raw);

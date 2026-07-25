@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 
 import { getDatabase } from "@/lib/db";
 import { setDeviceCookie } from "@/lib/device-cookie";
-import { validateRecoveryCode } from "@/lib/recovery";
+import { RECOVERY_COPY, validateRecoveryCode } from "@/lib/recovery";
 import {
   findCurrentSession,
   findSubmissionByDeviceToken,
@@ -26,6 +26,13 @@ import type { RecoveryFormState } from "./recovery-state";
  * owner-scoped way it already does ({@link findSubmissionByDeviceToken}) and
  * this action stays the only place that understands recovery codes. The original
  * phone keeps working — its cookie is untouched.
+ *
+ * That means two devices can hold the same token, which is exactly the intended
+ * exposure model, not a hole: the `(sessionId, deviceToken)` unique index still
+ * holds (it constrains *entries*, not devices, so "one submission per device"
+ * remains enforced), and both the cookie and the recovery code are bearer
+ * credentials with the same risk profile as the return link (§3). Whoever holds
+ * the code is the owner.
  *
  * **Not gated on the reveal boundary.** The §6 hard cutoff governs *writing* a
  * submission; restoring one is a read. Before the reveal a recovered
@@ -60,9 +67,12 @@ export async function recoverAction(
     if (own) {
       // This device already holds its own entry, so there is nothing to
       // restore — and overwriting its cookie with another entry's token would
-      // lose access to it. Show what it already has (§6). A *stale* cookie
-      // whose entry is gone (purged, §8) falls through and recovers normally.
-      redirect("/");
+      // cost them access to it (§6: one submission per device). Say so rather
+      // than redirecting: dropping someone onto a return view without a word
+      // would look like their code was accepted when it was never used. A
+      // *stale* cookie whose entry is gone (purged, §8) falls through and
+      // recovers normally.
+      return { error: RECOVERY_COPY.alreadyOnThisPhone };
     }
   }
 

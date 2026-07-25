@@ -11,7 +11,7 @@ import { DEVICE_TOKEN_COOKIE } from "@/lib/submit";
  */
 
 /** Two days covers the open→reveal window and the next-morning return (§10). */
-export const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
+const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
 
 /**
  * Sets the device cookie to `token`. `httpOnly` so the bearer value is never

@@ -14,9 +14,8 @@ import { INITIAL_RECOVERY_STATE } from "./recover/recovery-state";
  *
  * The input is deliberately forgiving — any case, and spaces or dashes are
  * fine — because the code is typically being read off a screenshot; the server
- * normalizes before looking anything up. Server-side validation is
- * authoritative; the `pattern`/`maxLength` attributes here only save a
- * round-trip on an obvious typo.
+ * normalizes before looking anything up, and it alone decides whether a code is
+ * well-formed (see the field comment on why there is no browser `pattern`).
  */
 export function RecoveryForm() {
   const [state, formAction, pending] = useActionState(

@@ -34,6 +34,13 @@ export const SUBMIT_COPY = {
   consent:
     "Just one person — the one you're paired with — will see your name and read this. It's never shown publicly, no one sees everyone's, and it's all deleted tomorrow.",
   button: "Share my request",
+  /**
+   * The status header for a visitor who has no entry and arrives at or after
+   * the reveal — the §6/§10 hard cutoff ("late arrival … covered in person").
+   * Leads that screen because it is the true thing about their situation; the
+   * recovery-code offer sits underneath it (§7.3).
+   */
+  closedHeading: "Submissions have closed",
 } as const;
 
 /**
@@ -45,6 +52,17 @@ export const SUBMIT_COPY = {
  */
 export function submissionsCloseLine(revealLabel: string): string {
   return `Submissions close at the reveal time (${revealLabel}).`;
+}
+
+/**
+ * The past-tense counterpart, for a visitor who arrives after the hard cutoff
+ * (§6): submissions are closed, so no new request can be added. Lives here with
+ * {@link submissionsCloseLine} so both sides of the close boundary are worded in
+ * one place, and takes the same organizer-set label (#14) rather than a frozen
+ * time.
+ */
+export function submissionsClosedLine(revealLabel: string): string {
+  return `Submissions closed at ${revealLabel}, so a new request can't be added now.`;
 }
 
 /** A starter chip: a warm topic label whose tap prefills a sentence starter. */
