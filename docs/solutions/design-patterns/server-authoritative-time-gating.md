@@ -233,7 +233,8 @@ the server's call.
   re-gate to `src/app/confirmed/page.tsx` and established the redirect and failed-refresh
   behavior documented in steps 4 and 5.
 - `src/app/page.tsx` and `src/app/confirmed/page.tsx` — the two call sites of the pattern.
-- `src/app/Countdown.tsx` — the shared re-gate component (docstring correction pending, step 5).
+- `src/app/Countdown.tsx` — the shared re-gate component; its comments scope the retry to the
+  stale-response case (step 5).
 - `src/lib/reveal.ts` — `isRevealOpen`, `msUntilReveal`, `formatCountdown` (pure, unit-tested).
 - `src/lib/submit.ts` — `isBeforeReveal`, the single boundary definition also used by the
   server-side submit/edit hard cutoff (`src/app/actions.ts`).
