@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FIELD_MAX_LENGTHS,
   isBeforeReveal,
   STARTER_CHIPS,
+  submissionsCloseLine,
   SUBMIT_COPY,
   validateSubmissionForm,
 } from "@/lib/submit";
@@ -21,8 +23,17 @@ describe("SUBMIT_COPY", () => {
       "Just one person — the one you're paired with — will see your name and read this. It's never shown publicly, no one sees everyone's, and it's all deleted tomorrow.",
     );
     expect(SUBMIT_COPY.button).toBe("Share my request");
-    expect(SUBMIT_COPY.finePrint).toBe(
-      "Submissions close at the reveal time (11:00 on Monday).",
+  });
+});
+
+describe("submissionsCloseLine", () => {
+  it("interpolates the organizer-set reveal label instead of a frozen time (#14)", () => {
+    expect(submissionsCloseLine("Mon, 27 Jul 2026, 11:00")).toBe(
+      "Submissions close at the reveal time (Mon, 27 Jul 2026, 11:00).",
+    );
+    // A different configured reveal must be reflected, not silently wrong.
+    expect(submissionsCloseLine("Tue, 28 Jul 2026, 09:30")).toContain(
+      "Tue, 28 Jul 2026, 09:30",
     );
   });
 });
@@ -130,6 +141,43 @@ describe("validateSubmissionForm", () => {
     });
 
     expect(result.ok).toBe(false);
+  });
+
+  it("accepts fields exactly at the length limits", () => {
+    const result = validateSubmissionForm({
+      firstName: "a".repeat(FIELD_MAX_LENGTHS.name),
+      lastName: "b".repeat(FIELD_MAX_LENGTHS.name),
+      request: "c".repeat(FIELD_MAX_LENGTHS.request),
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects an over-long name (server-authoritative bound)", () => {
+    const result = validateSubmissionForm({
+      firstName: "a".repeat(FIELD_MAX_LENGTHS.name + 1),
+      lastName: "Lovelace",
+      request: "A hope",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.firstName).toBeTruthy();
+      expect(result.fieldErrors.lastName).toBeUndefined();
+    }
+  });
+
+  it("rejects an over-long request rather than persisting unbounded input", () => {
+    const result = validateSubmissionForm({
+      firstName: "Ada",
+      lastName: "Lovelace",
+      request: "c".repeat(FIELD_MAX_LENGTHS.request + 1),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.request).toBeTruthy();
+    }
   });
 });
 

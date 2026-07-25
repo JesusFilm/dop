@@ -34,8 +34,18 @@ export const SUBMIT_COPY = {
   consent:
     "Just one person — the one you're paired with — will see your name and read this. It's never shown publicly, no one sees everyone's, and it's all deleted tomorrow.",
   button: "Share my request",
-  finePrint: "Submissions close at the reveal time (11:00 on Monday).",
 } as const;
+
+/**
+ * The "submissions close" fine print. Interpolated with the organizer-set
+ * reveal label (#14) rather than a frozen time: `revealAt` is configurable and
+ * every other surface derives its label from it, so freezing "11:00 on Monday"
+ * here would silently lie for any other reveal time. Kept as a function (not a
+ * `SUBMIT_COPY` constant) precisely because the value is dynamic.
+ */
+export function submissionsCloseLine(revealLabel: string): string {
+  return `Submissions close at the reveal time (${revealLabel}).`;
+}
 
 /** A starter chip: a warm topic label whose tap prefills a sentence starter. */
 export interface StarterChip {
@@ -93,11 +103,23 @@ function asTrimmedString(value: unknown): string {
 }
 
 /**
+ * Maximum trimmed lengths accepted for each field. Enforced server-side (the
+ * authoritative boundary) so an unbounded body cannot flood the DB or the
+ * partner's reveal view; the client `maxLength` attributes mirror these only as
+ * a convenience. Sized generously for real names and a heartfelt paragraph.
+ */
+export const FIELD_MAX_LENGTHS = {
+  name: 100,
+  request: 2000,
+} as const;
+
+/**
  * Validates the submit form: first name, last name, and request are all
- * required (#13 — two separate required name fields; request required, §7.1).
- * Trims each field, reports every empty field at once, and returns the cleaned
- * values on success. Server-authoritative — the client `required` attributes
- * are a convenience, not the boundary.
+ * required (#13 — two separate required name fields; request required, §7.1)
+ * and bounded in length ({@link FIELD_MAX_LENGTHS}). Trims each field, reports
+ * every failing field at once, and returns the cleaned values on success.
+ * Server-authoritative — the client `required`/`maxLength` attributes are a
+ * convenience, not the boundary.
  */
 export function validateSubmissionForm(
   raw: RawSubmissionForm,
@@ -109,12 +131,18 @@ export function validateSubmissionForm(
   const fieldErrors: SubmissionFieldErrors = {};
   if (!firstName) {
     fieldErrors.firstName = "Please enter your first name.";
+  } else if (firstName.length > FIELD_MAX_LENGTHS.name) {
+    fieldErrors.firstName = `Please keep your first name under ${FIELD_MAX_LENGTHS.name} characters.`;
   }
   if (!lastName) {
     fieldErrors.lastName = "Please enter your last name.";
+  } else if (lastName.length > FIELD_MAX_LENGTHS.name) {
+    fieldErrors.lastName = `Please keep your last name under ${FIELD_MAX_LENGTHS.name} characters.`;
   }
   if (!request) {
     fieldErrors.request = "Please write what you'd like prayer for.";
+  } else if (request.length > FIELD_MAX_LENGTHS.request) {
+    fieldErrors.request = `Please keep your request under ${FIELD_MAX_LENGTHS.request} characters.`;
   }
 
   if (Object.keys(fieldErrors).length > 0) {

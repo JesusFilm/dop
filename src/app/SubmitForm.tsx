@@ -3,7 +3,9 @@
 import { useActionState, useRef, useState } from "react";
 
 import {
+  FIELD_MAX_LENGTHS,
   STARTER_CHIPS,
+  submissionsCloseLine,
   SUBMIT_COPY,
   type SubmissionFieldErrors,
 } from "@/lib/submit";
@@ -66,10 +68,13 @@ export function SubmitForm({
   action,
   mode = "create",
   defaults,
+  revealLabel,
 }: {
   action: SubmitFormAction;
   mode?: "create" | "edit";
   defaults?: SubmitFormDefaults;
+  /** The organizer-set reveal time, formatted for the close-time fine print. */
+  revealLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(
     action,
@@ -99,6 +104,7 @@ export function SubmitForm({
             type="text"
             name="firstName"
             required
+            maxLength={FIELD_MAX_LENGTHS.name}
             autoComplete="given-name"
             defaultValue={defaults?.firstName ?? ""}
             style={inputStyle}
@@ -112,6 +118,7 @@ export function SubmitForm({
             type="text"
             name="lastName"
             required
+            maxLength={FIELD_MAX_LENGTHS.name}
             autoComplete="family-name"
             defaultValue={defaults?.lastName ?? ""}
             style={inputStyle}
@@ -156,6 +163,7 @@ export function SubmitForm({
           ref={requestRef}
           name="request"
           required
+          maxLength={FIELD_MAX_LENGTHS.request}
           rows={5}
           placeholder={SUBMIT_COPY.requestPlaceholder}
           value={request}
@@ -204,7 +212,7 @@ export function SubmitForm({
           textAlign: "center",
         }}
       >
-        {SUBMIT_COPY.finePrint}
+        {submissionsCloseLine(revealLabel)}
       </p>
     </form>
   );

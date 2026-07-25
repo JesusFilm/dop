@@ -30,9 +30,19 @@ import type { SubmitFormState } from "./submit-state";
 const CLOSED_MESSAGE =
   "Submissions have closed — come back at the reveal time.";
 const NOT_OPEN_MESSAGE = "This isn't open yet. Please check with an organizer.";
+const SAVE_ERROR_MESSAGE =
+  "Something went wrong saving your request. Please try again.";
 
 /** Two days covers the open→reveal window and the next-morning return (§10). */
 const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
+
+/**
+ * How many times to regenerate the recovery code and retry a create when the
+ * insert loses the `(sessionId, recoveryCode)` unique race. A collision is
+ * astronomically rare (6 chars over a 32-char alphabet), so a small ceiling is
+ * ample and bounds the loop.
+ */
+const MAX_RECOVERY_CODE_ATTEMPTS = 5;
 
 async function setDeviceCookie(token: string): Promise<void> {
   const cookieStore = await cookies();
@@ -53,6 +63,25 @@ function isUniqueViolation(error: unknown): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === "P2002"
   );
+}
+
+/**
+ * The fields/constraint the P2002 references, as a flat list of strings.
+ * Prisma reports `meta.target` as a field-name array (`["sessionId",
+ * "deviceToken"]`) or, depending on adapter, the constraint name string
+ * (`"submissions_sessionId_recoveryCode_key"`); both forms carry the field
+ * name, so callers match by substring. Empty when the adapter omits `target`.
+ */
+function uniqueViolationTarget(error: unknown): string[] {
+  const target = (error as { meta?: { target?: unknown } })?.meta?.target;
+  if (Array.isArray(target)) {
+    return target.filter((entry): entry is string => typeof entry === "string");
+  }
+  return typeof target === "string" ? [target] : [];
+}
+
+function targetMentions(error: unknown, field: string): boolean {
+  return uniqueViolationTarget(error).some((entry) => entry.includes(field));
 }
 
 /**
@@ -107,26 +136,54 @@ export async function submitAction(
   // attempt that never persisted), otherwise mint a fresh token.
   const deviceToken = existingToken ?? generateDeviceToken();
 
-  try {
-    await createSubmission(db, {
-      sessionId: session.id,
-      deviceToken,
-      recoveryCode: generateRecoveryCode(),
-      firstName: validation.value.firstName,
-      lastName: validation.value.lastName,
-      request: validation.value.request,
-    });
-  } catch (error) {
-    // A concurrent submit from the same device already won the
-    // (sessionId, deviceToken) unique index — treat as already-submitted and
-    // show the return view rather than surfacing a database error (§6).
-    if (isUniqueViolation(error)) {
-      await setDeviceCookie(deviceToken);
-      redirect("/");
+  // `Submission` carries two unique indexes — (sessionId, deviceToken) and
+  // (sessionId, recoveryCode) — so a P2002 must be disambiguated. A deviceToken
+  // race means this phone already has an entry: bounce to the return view. A
+  // recoveryCode collision means the row was NEVER written, so we regenerate
+  // the code and retry rather than silently dropping the submission (which the
+  // old "any P2002 → already-submitted" path did).
+  for (let attempt = 1; attempt <= MAX_RECOVERY_CODE_ATTEMPTS; attempt += 1) {
+    try {
+      await createSubmission(db, {
+        sessionId: session.id,
+        deviceToken,
+        recoveryCode: generateRecoveryCode(),
+        firstName: validation.value.firstName,
+        lastName: validation.value.lastName,
+        request: validation.value.request,
+      });
+      break;
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        return { error: SAVE_ERROR_MESSAGE };
+      }
+
+      // Definite deviceToken race → already-submitted return view (§6).
+      if (targetMentions(error, "deviceToken")) {
+        await setDeviceCookie(deviceToken);
+        redirect("/");
+      }
+
+      // A recoveryCode collision, or an unknown target that still has a retry
+      // left: regenerate and try again. When the target is unknown, a fresh
+      // UUID deviceToken cannot realistically collide, so a retry is the safe
+      // reading; a persistent reused-token collision is resolved after the loop.
+      const retriable =
+        targetMentions(error, "recoveryCode") ||
+        uniqueViolationTarget(error).length === 0;
+      if (retriable && attempt < MAX_RECOVERY_CODE_ATTEMPTS) {
+        continue;
+      }
+
+      // Retries exhausted with an unknown target: if we reused an existing
+      // cookie token this is most likely a genuine device race, so show the
+      // return view; otherwise surface the generic error.
+      if (retriable && existingToken) {
+        await setDeviceCookie(deviceToken);
+        redirect("/");
+      }
+      return { error: SAVE_ERROR_MESSAGE };
     }
-    return {
-      error: "Something went wrong saving your request. Please try again.",
-    };
   }
 
   await setDeviceCookie(deviceToken);

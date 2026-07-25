@@ -98,6 +98,7 @@ export default async function Home() {
         <SubmitForm
           action={editAction}
           mode="edit"
+          revealLabel={revealLabel}
           defaults={{
             firstName: existing.firstName,
             lastName: existing.lastName,
@@ -129,7 +130,11 @@ export default async function Home() {
           {SUBMIT_COPY.intro}
         </p>
       </header>
-      <SubmitForm action={submitAction} mode="create" />
+      <SubmitForm
+        action={submitAction}
+        mode="create"
+        revealLabel={revealLabel}
+      />
     </main>
   );
 }

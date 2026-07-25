@@ -181,21 +181,87 @@ describe("submitAction", () => {
     expect(redirect).toHaveBeenCalledWith("/");
   });
 
-  it("treats a P2002 race as already-submitted and redirects to the return view", async () => {
+  it("treats a deviceToken-constraint P2002 as already-submitted and redirects to the return view", async () => {
+    // A concurrent same-device submit: the cookie token is present but the
+    // dedup read missed the row the racing request wrote, so the insert loses
+    // the (sessionId, deviceToken) index.
+    const cookieJar = fakeCookies({
+      name: DEVICE_TOKEN_COOKIE,
+      value: "device-abc",
+    });
+    vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue(null);
+    vi.mocked(createSubmission).mockRejectedValue({
+      code: "P2002",
+      meta: { target: ["sessionId", "deviceToken"] },
+    });
+
+    await expect(
+      submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
+    ).rejects.toThrow("REDIRECT:/");
+
+    // The cookie is set to the device's own token so the return view resolves.
+    expect(cookieJar.setCalls).toHaveLength(1);
+    expect(cookieJar.setCalls[0].value).toBe("device-abc");
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("regenerates the recovery code and retries on a recoveryCode-constraint P2002 (no silent data loss)", async () => {
     const cookieJar = fakeCookies();
     vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
     vi.mocked(findCurrentSession).mockResolvedValue({
       id: "sess_1",
       revealAt: FUTURE_REVEAL,
     } as never);
-    vi.mocked(createSubmission).mockRejectedValue({ code: "P2002" });
+    // First insert loses the (sessionId, recoveryCode) race; the retry wins.
+    vi.mocked(createSubmission)
+      .mockRejectedValueOnce({
+        code: "P2002",
+        meta: { target: ["sessionId", "recoveryCode"] },
+      })
+      .mockResolvedValueOnce({ id: "sub_1" } as never);
 
     await expect(
       submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
     ).rejects.toThrow("REDIRECT:/");
 
+    // The submission was actually persisted on retry, with a freshly minted
+    // recovery code each attempt — never treated as already-submitted.
+    expect(createSubmission).toHaveBeenCalledTimes(2);
+    const firstCode = vi.mocked(createSubmission).mock.calls[0][1].recoveryCode;
+    const secondCode =
+      vi.mocked(createSubmission).mock.calls[1][1].recoveryCode;
+    expect(firstCode).toBeTruthy();
+    expect(secondCode).toBeTruthy();
+    expect(secondCode).not.toBe(firstCode);
     expect(cookieJar.setCalls).toHaveLength(1);
     expect(redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("gives up with a generic error after exhausting recovery-code retries", async () => {
+    const cookieJar = fakeCookies();
+    vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(createSubmission).mockRejectedValue({
+      code: "P2002",
+      meta: { target: ["sessionId", "recoveryCode"] },
+    });
+
+    const result: SubmitFormState = await submitAction(
+      INITIAL_SUBMIT_STATE,
+      VALID_FORM,
+    );
+
+    expect(result.error).toMatch(/went wrong/i);
+    expect(vi.mocked(createSubmission).mock.calls.length).toBeGreaterThan(1);
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("returns a generic error (never a raw database error) on a non-P2002 failure", async () => {
