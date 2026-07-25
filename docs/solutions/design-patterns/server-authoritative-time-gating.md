@@ -33,7 +33,7 @@ reveal opens, a sale ends. Two forces make this deceptively hard:
 1. **The trigger drifts.** Whatever fires the switch (a cron job, a scheduler, a queue)
    is usually best-effort and can run minutes late. If "it's time" means "the scheduler
    fired," the boundary is as fuzzy as the scheduler.
-2. **The client clock lies.** A countdown rendered on the user's device, comparing *their*
+2. **The client clock lies.** A countdown rendered on the user's device, comparing _their_
    wall clock to the deadline, shows the wrong number when the device clock is wrong — and
    can "reach zero" early or late, unlocking content out from under the server.
 
@@ -49,7 +49,7 @@ client a countdown that is anchored to server time, never to the device clock.
 
 **1. Define the boundary once, as a pure predicate.** One instant (`revealAt`) is the whole
 gate. Express "is it open yet?" as the exact logical complement of "is it still before?", and
-*derive* one from the other so they can never drift apart:
+_derive_ one from the other so they can never drift apart:
 
 ```ts
 // src/lib/submit.ts:161 — the one boundary definition (strict <)
@@ -64,7 +64,7 @@ export function isRevealOpen(now: Date, revealAt: Date): boolean {
 ```
 
 Because `isBeforeReveal` is strict (`<`), the boundary is **inclusive on the open side**:
-at the exact instant `now === revealAt`, submissions are closed *and* the reveal is open
+at the exact instant `now === revealAt`, submissions are closed _and_ the reveal is open
 ("close = reveal"). Both the submit cutoff and the reveal gate read from the same predicate,
 so they cannot disagree.
 
@@ -76,7 +76,7 @@ single time and derives every branch — and the countdown's anchor — from tha
 const now = new Date();
 const revealOpen = isRevealOpen(now, session.revealAt);
 // ...
-<Countdown initialRemainingMs={msUntilReveal(now, session.revealAt)} />
+<Countdown initialRemainingMs={msUntilReveal(now, session.revealAt)} />;
 ```
 
 `msUntilReveal` clamps at zero so the client never receives a negative anchor
@@ -84,12 +84,12 @@ const revealOpen = isRevealOpen(now, session.revealAt);
 
 **3. Hand the client a duration, not a deadline; tick down elapsed monotonic time.** The
 client seeds its countdown from the server-computed remaining milliseconds, then subtracts
-*elapsed* time measured with `performance.now()` — a monotonic timer immune to the device
+_elapsed_ time measured with `performance.now()` — a monotonic timer immune to the device
 clock being wrong or adjusted mid-countdown:
 
 ```tsx
 // src/app/Countdown.tsx (abridged)
-const startedAt = performance.now();            // monotonic anchor
+const startedAt = performance.now(); // monotonic anchor
 function tick() {
   const elapsed = performance.now() - startedAt;
   const next = Math.max(0, initialRemainingMs - elapsed);
@@ -98,13 +98,13 @@ function tick() {
 }
 ```
 
-A phone set three hours fast still shows the correct countdown, because only the *duration*
+A phone set three hours fast still shows the correct countdown, because only the _duration_
 since page load matters, and durations don't care what time the device thinks it is.
 
 **4. At zero, ask the server to re-render — don't unlock client-side.** When the countdown
 hits zero the client calls `router.refresh()` rather than revealing content itself. The
 server re-reads its own clock, re-evaluates `isRevealOpen`, and decides what to serve. The
-client only *asks*; the app clock *answers*. This is what stops a fast client clock from
+client only _asks_; the app clock _answers_. This is what stops a fast client clock from
 jumping the gate.
 
 **5. Retry the "ask" so a lost round-trip can't freeze the screen.** The reveal moment is
@@ -113,7 +113,7 @@ re-attempt `router.refresh()` on a slow cadence until one succeeds — a success
 gated view and unmounts the component, whose effect cleanup stops the retries:
 
 ```tsx
-let lastRefreshAt = Number.NEGATIVE_INFINITY;    // first zero-crossing fires immediately
+let lastRefreshAt = Number.NEGATIVE_INFINITY; // first zero-crossing fires immediately
 if (next <= 0 && elapsed - lastRefreshAt >= REVEAL_REFRESH_RETRY_MS) {
   lastRefreshAt = elapsed;
   router.refresh();
@@ -122,8 +122,8 @@ if (next <= 0 && elapsed - lastRefreshAt >= REVEAL_REFRESH_RETRY_MS) {
 
 ## Why This Matters
 
-- **Sharpness is decoupled from the scheduler.** The scheduler becomes a mere *compute
-  nudge*; whether it's reveal time is always `now >= revealAt` on the server. Cron can drift
+- **Sharpness is decoupled from the scheduler.** The scheduler becomes a mere _compute
+  nudge_; whether it's reveal time is always `now >= revealAt` on the server. Cron can drift
   minutes and the boundary stays exact.
 - **The countdown can't be gamed or broken by a wrong device clock.** Anchoring to a
   server-computed duration + monotonic elapsed time removes the client clock from the trust
@@ -151,8 +151,8 @@ fall back to displaying the deadline and letting the next natural navigation re-
 
 ```tsx
 // Compares the DEVICE clock to the deadline every tick.
-const remaining = revealAtMs - Date.now();   // wrong if the phone clock is wrong
-if (remaining <= 0) showRevealView();         // client unlocks itself — a fast clock jumps the gate
+const remaining = revealAtMs - Date.now(); // wrong if the phone clock is wrong
+if (remaining <= 0) showRevealView(); // client unlocks itself — a fast clock jumps the gate
 ```
 
 **After — server-anchored duration + monotonic tick + server re-gate:**
@@ -162,7 +162,7 @@ if (remaining <= 0) showRevealView();         // client unlocks itself — a fas
 // Client:
 const startedAt = performance.now();
 const next = Math.max(0, initialRemainingMs - (performance.now() - startedAt));
-if (next <= 0) router.refresh();   // ask the server; it owns the gate
+if (next <= 0) router.refresh(); // ask the server; it owns the gate
 ```
 
 The display value now survives any device-clock error, and the actual state change is always
@@ -174,4 +174,4 @@ the server's call.
 - `src/lib/reveal.ts` — `isRevealOpen`, `msUntilReveal`, `formatCountdown` (pure, unit-tested).
 - `src/lib/submit.ts` — `isBeforeReveal`, the single boundary definition also used by the
   server-side submit/edit hard cutoff (`src/app/actions.ts`).
-- `CONCEPTS.md` — *Reveal time*, *App-clock authority*, *Hard cutoff*.
+- `CONCEPTS.md` — _Reveal time_, _App-clock authority_, _Hard cutoff_.
