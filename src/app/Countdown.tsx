@@ -18,11 +18,22 @@ import { formatCountdown } from "@/lib/reveal";
  * reaches zero it asks the server to re-render via {@link useRouter.refresh},
  * letting the app clock — the sole authority — decide what to serve next (reveal
  * view or a hard-closed notice), rather than the client unlocking content on its
- * own.
+ * own. That refresh is **retried on a slow cadence** while the screen is still
+ * pre-reveal, so a single failed round-trip (flaky venue wifi at the reveal
+ * moment) can't freeze the display at 0:00 until a manual reload — it catches up
+ * on the next successful refresh, which unmounts this component.
  */
 
 /** How often the countdown recomputes and repaints, in milliseconds. */
 const TICK_INTERVAL_MS = 1000;
+
+/**
+ * How often to re-attempt the reveal `router.refresh()` once the countdown has
+ * reached zero but the server hasn't yet swapped in the reveal view (a failed
+ * or lost refresh). Slow enough not to hammer the server, brief enough that a
+ * recovering network advances the participant within a few seconds.
+ */
+const REVEAL_REFRESH_RETRY_MS = 3000;
 
 export function Countdown({
   initialRemainingMs,
@@ -43,15 +54,21 @@ export function Countdown({
     // `performance.now()` is monotonic — immune to the device clock being
     // adjusted mid-countdown — so elapsed time is measured, not decremented.
     const startedAt = performance.now();
+    // Elapsed reading of the last refresh attempt; -Infinity so the first
+    // zero-crossing fires immediately, then retries pace at the retry interval.
+    let lastRefreshAt = Number.NEGATIVE_INFINITY;
 
     function tick() {
       const elapsed = performance.now() - startedAt;
       const next = Math.max(0, initialRemainingMs - elapsed);
       setRemainingMs(next);
-      if (next <= 0) {
-        clearInterval(timer);
+      if (next <= 0 && elapsed - lastRefreshAt >= REVEAL_REFRESH_RETRY_MS) {
         // The gate is the server's to open: re-render so the app clock decides
-        // what comes next, rather than unlocking content client-side.
+        // what comes next, rather than unlocking content client-side. Keep the
+        // interval running and retry on a slow cadence — a successful refresh
+        // serves the reveal view and unmounts us (cleanup stops the retries);
+        // a failed one (flaky wifi) is re-attempted rather than left frozen.
+        lastRefreshAt = elapsed;
         router.refresh();
       }
     }
