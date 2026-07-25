@@ -10,10 +10,13 @@ import {
   findSessionsDueForPurge,
   findSubmissionByDeviceToken,
   findSubmissionByRecoveryCode,
+  freezePairing,
   getGroupAssignment,
   purgeSessionSubmissions,
   updateSubmission,
   type DataClient,
+  type FreezePairingResult,
+  type PairingClient,
 } from "@/lib/repository";
 
 /**
@@ -424,6 +427,386 @@ describe("getGroupAssignment", () => {
   });
 });
 
+/**
+ * A fake {@link PairingClient} whose `$transaction` runs the callback with the
+ * supplied transaction delegates immediately (no real database). Only the
+ * delegate methods a given test exercises need to be provided; `$queryRaw`
+ * (the advisory lock) defaults to a no-op.
+ */
+function fakePairingClient(tx: {
+  $queryRaw?: unknown;
+  session?: Record<string, unknown>;
+  submission?: Record<string, unknown>;
+  group?: Record<string, unknown>;
+  /** Captures the options passed as `$transaction`'s second argument. */
+  onOptions?: (options: unknown) => void;
+}): PairingClient {
+  const transactionClient = {
+    $queryRaw: tx.$queryRaw ?? vi.fn().mockResolvedValue([]),
+    session: tx.session,
+    submission: tx.submission,
+    group: tx.group,
+  };
+  return {
+    $transaction: (fn: (client: unknown) => unknown, options: unknown) => {
+      tx.onOptions?.(options);
+      return fn(transactionClient);
+    },
+  } as unknown as PairingClient;
+}
+
+const REVEAL_AT = new Date("2026-07-27T23:00:00.000Z");
+const AFTER_REVEAL = new Date("2026-07-27T23:00:01.000Z");
+
+/**
+ * These tests drive `freezePairing` through a fake `$transaction` that runs the
+ * callback inline. That verifies the freeze's *logic* — compute-once, the
+ * write-once short-circuit, the app-clock guard, and the SQL it issues — but by
+ * construction it cannot exercise real multi-connection contention on the
+ * Postgres advisory lock, nor the `ReadCommitted` isolation the single-winner
+ * guarantee leans on. Those hold only against a live database and are out of
+ * scope for this unit suite (they belong to an integration test).
+ */
+describe("freezePairing", () => {
+  it("computes, writes groups, and stamps pairingFrozenAt when unfrozen", async () => {
+    const advisoryLock = vi.fn().mockResolvedValue([]);
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "sess_1",
+      revealAt: REVEAL_AT,
+      pairingFrozenAt: null,
+    });
+    const findMany = vi
+      .fn()
+      .mockResolvedValue([{ id: "a" }, { id: "b" }, { id: "c" }]);
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const sessionUpdate = vi.fn().mockResolvedValue({});
+
+    const client = fakePairingClient({
+      $queryRaw: advisoryLock,
+      session: { findUnique, update: sessionUpdate },
+      submission: { findMany },
+      group: { createMany: groupCreateMany },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+      // A near-1 random keeps Fisher–Yates from moving anything, so the
+      // asserted grouping is deterministic.
+      random: () => 0.999999,
+    });
+
+    // The session lock is the actual advisory-lock SQL (concurrent triggers
+    // serialize on it), keyed by this session id — asserted on content so a
+    // regression to a non-xact variant or a different key is caught.
+    expect(advisoryLock).toHaveBeenCalledTimes(1);
+    const [lockSql, ...lockValues] = advisoryLock.mock.calls[0] as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    expect(lockSql.join("?")).toContain("pg_advisory_xact_lock");
+    expect(lockSql.join("?")).toContain("hashtextextended");
+    expect(lockValues).toContain("sess_1");
+    // n=3 → exactly one trio, written in a single createMany.
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(groupCreateMany.mock.calls[0][0]).toEqual({
+      data: [{ sessionId: "sess_1", memberSubmissionIds: ["a", "b", "c"] }],
+    });
+    // Only the reveal-cutoff submissions are read, ids only (Privacy #3).
+    expect(findMany).toHaveBeenCalledWith({
+      where: { sessionId: "sess_1", createdAt: { lt: REVEAL_AT } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    // The freeze instant is the app clock's, stamped last.
+    expect(sessionUpdate).toHaveBeenCalledWith({
+      where: { id: "sess_1" },
+      data: { pairingFrozenAt: AFTER_REVEAL },
+    });
+
+    expect(result).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt: AFTER_REVEAL,
+      alreadyFrozen: false,
+      groupCount: 1,
+    });
+  });
+
+  it("pins explicit isolation, timeout, and maxWait on the transaction", async () => {
+    // The lock-wait shares the transaction's timeout budget, so the bounds are
+    // pinned rather than left to Prisma's silent defaults. A queued trigger must
+    // be allowed to wait out the winner, not abort mid-freeze.
+    let options: {
+      isolationLevel?: string;
+      timeout?: number;
+      maxWait?: number;
+    } = {};
+    const client = fakePairingClient({
+      onOptions: (received) => {
+        options = received as typeof options;
+      },
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      submission: {
+        findMany: vi.fn().mockResolvedValue([{ id: "a" }, { id: "b" }]),
+      },
+      group: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    });
+
+    await freezePairing(client, { sessionId: "sess_1", now: AFTER_REVEAL });
+
+    expect(options.isolationLevel).toBe("ReadCommitted");
+    // Timeout must exceed maxWait so the lock-wait has real headroom.
+    expect(options.timeout).toBeGreaterThan(options.maxWait ?? 0);
+    expect(options.maxWait).toBeGreaterThan(0);
+  });
+
+  it("splits an even count into pairs and never writes a trio", async () => {
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 2 });
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      submission: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "a" },
+            { id: "b" },
+            { id: "c" },
+            { id: "d" },
+          ]),
+      },
+      group: { createMany: groupCreateMany },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+      random: () => 0.999999,
+    });
+
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(groupCreateMany.mock.calls[0][0].data).toEqual([
+      { sessionId: "sess_1", memberSubmissionIds: ["a", "b"] },
+      { sessionId: "sess_1", memberSubmissionIds: ["c", "d"] },
+    ]);
+    expect(result).toMatchObject({ status: "frozen", groupCount: 2 });
+  });
+
+  it("freezes at exactly the reveal instant (close = reveal is inclusive)", async () => {
+    // `now === revealAt` is the sharp boundary `isBeforeReveal` hinges on: not
+    // before the reveal, so the freeze proceeds rather than refusing.
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      submission: {
+        findMany: vi.fn().mockResolvedValue([{ id: "a" }, { id: "b" }]),
+      },
+      group: { createMany: groupCreateMany },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: new Date(REVEAL_AT),
+    });
+
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ status: "frozen", groupCount: 1 });
+  });
+
+  it("writes no group for the lone n=1 person but still freezes", async () => {
+    const groupCreateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const sessionUpdate = vi.fn().mockResolvedValue({});
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: sessionUpdate,
+      },
+      submission: { findMany: vi.fn().mockResolvedValue([{ id: "a" }]) },
+      group: { createMany: groupCreateMany },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+    });
+
+    // Never self-matched: no group is written (the empty set is not inserted).
+    expect(groupCreateMany).not.toHaveBeenCalled();
+    // The freeze still happened so it is not retried forever.
+    expect(sessionUpdate).toHaveBeenCalledTimes(1);
+    expect(result).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt: AFTER_REVEAL,
+      alreadyFrozen: false,
+      groupCount: 0,
+    });
+  });
+
+  it("returns the existing frozen result without recomputing (write-once)", async () => {
+    const frozenAt = new Date("2026-07-27T23:00:05.000Z");
+    const findMany = vi.fn();
+    const groupCreateMany = vi.fn();
+    const sessionUpdate = vi.fn();
+
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: frozenAt,
+        }),
+        update: sessionUpdate,
+      },
+      submission: { findMany },
+      group: {
+        createMany: groupCreateMany,
+        count: vi.fn().mockResolvedValue(4),
+      },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+    });
+
+    // A frozen pairing never recomputes: no submissions read, no writes.
+    expect(findMany).not.toHaveBeenCalled();
+    expect(groupCreateMany).not.toHaveBeenCalled();
+    expect(sessionUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt,
+      alreadyFrozen: true,
+      groupCount: 4,
+    });
+  });
+
+  it("computes once across repeated triggers on the same session (single-winner)", async () => {
+    // Model the single-winner sequence a real advisory lock produces: the
+    // winner freezes; a later trigger sees the committed `pairingFrozenAt` and
+    // reads it back rather than recomputing. A stateful fake session row stands
+    // in for the row the lock serializes access to. (Real contention on the
+    // lock itself needs a live database — see this describe block's note.)
+    const sessionRow = {
+      id: "sess_1",
+      revealAt: REVEAL_AT,
+      pairingFrozenAt: null as Date | null,
+    };
+    let groupRows = 0;
+    const groupCreateMany = vi.fn().mockImplementation(async ({ data }) => {
+      groupRows += data.length;
+      return { count: data.length };
+    });
+
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockImplementation(async () => ({ ...sessionRow })),
+        update: vi.fn().mockImplementation(async ({ data }) => {
+          sessionRow.pairingFrozenAt = data.pairingFrozenAt;
+          return {};
+        }),
+      },
+      submission: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "a" }, { id: "b" }, { id: "c" }]),
+      },
+      group: {
+        createMany: groupCreateMany,
+        count: vi.fn().mockImplementation(async () => groupRows),
+      },
+    });
+
+    const first = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+      random: () => 0.999999,
+    });
+    const second = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: new Date("2026-07-27T23:05:00.000Z"),
+      random: () => 0.999999,
+    });
+
+    // Exactly one compute: the trio is written once, never a second time.
+    expect(groupCreateMany).toHaveBeenCalledTimes(1);
+    expect(first).toMatchObject({ alreadyFrozen: false, groupCount: 1 });
+    // The loser reads the frozen result — same freeze instant, never recomputed.
+    expect(second).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt: AFTER_REVEAL,
+      alreadyFrozen: true,
+      groupCount: 1,
+    });
+  });
+
+  it("refuses to freeze before the reveal instant (app-clock authority)", async () => {
+    const findMany = vi.fn();
+    const groupCreateMany = vi.fn();
+    const sessionUpdate = vi.fn();
+
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: sessionUpdate,
+      },
+      submission: { findMany },
+      group: { createMany: groupCreateMany },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: new Date("2026-07-27T22:59:59.000Z"),
+    });
+
+    expect(findMany).not.toHaveBeenCalled();
+    expect(groupCreateMany).not.toHaveBeenCalled();
+    expect(sessionUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual<FreezePairingResult>({
+      status: "not-open",
+      revealAt: REVEAL_AT,
+    });
+  });
+
+  it("throws when the session does not exist", async () => {
+    const client = fakePairingClient({
+      session: { findUnique: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(
+      freezePairing(client, { sessionId: "missing", now: AFTER_REVEAL }),
+    ).rejects.toThrow(/session missing not found/);
+  });
+});
+
 describe("data-access surface (Privacy #3)", () => {
   it("exposes no function that lists or returns all requests for a session", () => {
     const exported = Object.keys(repository).filter(
@@ -443,6 +826,7 @@ describe("data-access surface (Privacy #3)", () => {
         "findSessionsDueForPurge",
         "findSubmissionByDeviceToken",
         "findSubmissionByRecoveryCode",
+        "freezePairing",
         "getGroupAssignment",
         "purgeSessionSubmissions",
         "updateSubmission",
