@@ -104,7 +104,7 @@ The following breakdown is the current understanding, not a committed roadmap:
 - R13. Assignment follows participant join order and seeded room order: place two participants into a room before advancing to the next room, then continue one participant per eligible room in round-robin order, dropping each finite room once it reaches capacity.
 - R14. At reveal, each non-empty room receives one coordinator chosen randomly from its already assigned participants.
 - R15. Launch reveals hidden assignments and makes every existing participant's room final without recalculating the waiting roster.
-- R16. A participant who joins after launch is assigned automatically to the first configured room among the currently smallest eligible rooms without changing that room's coordinator.
+- R16. A participant who joins after launch is assigned automatically to the first configured room among the currently smallest eligible rooms. Existing coordinators are preserved; if the selected room is empty, the late participant becomes its coordinator.
 
 **Organizer operation**
 
@@ -174,8 +174,8 @@ flowchart TB
 - F4. Late participant joins
   - **Trigger:** A new participant submits the join form after launch.
   - **Actors:** A1
-  - **Steps:** The gathering selects the first configured room among the currently smallest rooms with remaining capacity and assigns the participant.
-  - **Outcome:** The participant receives a room immediately without changing any existing assignment or coordinator.
+  - **Steps:** The gathering selects the first configured room among the currently smallest rooms with remaining capacity and assigns the participant, making them coordinator only when that room was empty.
+  - **Outcome:** The participant receives a room immediately without changing any existing assignment or existing coordinator.
   - **Covers:** R13, R15, R16.
 
 - F5. A member takes over coordination
@@ -218,7 +218,7 @@ flowchart TB
   - **Covers:** R15, R16.
   - **Given:** Assignments have been revealed and the seeded configuration includes an unlimited room.
   - **When:** A new participant joins.
-  - **Then:** They enter the first configured room among the currently smallest eligible rooms without moving another participant or replacing its coordinator.
+  - **Then:** They enter the first configured room among the currently smallest eligible rooms without moving another participant or replacing an existing coordinator; if that room was empty, they become its coordinator.
 
 - AE5. Coordinator does not arrive
   - **Covers:** R20, R21.

@@ -81,8 +81,11 @@ For a remote non-production test environment, also set
    rosters fill in deterministic room order.
 3. Reveal once everyone expected has arrived. Existing assignments become
    visible and are final until reset.
-4. Expand room cards before or after reveal to inspect rosters and coordinators.
-5. Reset only when the run is finished or before a test run. Reset deletes live
+4. Participants can still join afterward. Each late arrival is assigned to the
+   first configured smallest eligible room without moving existing members or
+   replacing an existing coordinator.
+5. Expand room cards before or after reveal to inspect rosters and coordinators.
+6. Reset only when the run is finished or before a test run. Reset deletes live
    participant and prayer-request rows but does not control the separate
    retention period of provider-managed database backups.
 

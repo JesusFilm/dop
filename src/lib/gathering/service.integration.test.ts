@@ -226,7 +226,7 @@ describe("gathering lifecycle", () => {
     ]);
   });
 
-  it("rejects a join when seeded room invariants are broken", async () => {
+  it("rejects a join when the room configuration is empty", async () => {
     await expect(
       joinParticipant({
         displayName: "Waiting Participant",

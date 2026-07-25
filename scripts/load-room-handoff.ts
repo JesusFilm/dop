@@ -112,7 +112,11 @@ async function main() {
     }
 
     const organizer = await get("/api/organizer");
-    if (JSON.stringify(organizer).includes("Private load request")) {
+    const organizerText = JSON.stringify(organizer);
+    if (
+      organizerText.includes("Private load request") ||
+      organizerText.includes("Late private request")
+    ) {
       throw new Error("Organizer projection exposed a prayer request.");
     }
 

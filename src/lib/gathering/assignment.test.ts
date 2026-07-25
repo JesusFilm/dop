@@ -119,6 +119,12 @@ describe("pickSmallestEligibleRoom", () => {
 });
 
 describe("validateRoomConfiguration", () => {
+  it("requires at least one room", () => {
+    expect(() => validateRoomConfiguration([])).toThrow(
+      "At least one room is required for assignment.",
+    );
+  });
+
   it("requires at least one unlimited room", () => {
     expect(() =>
       validateRoomConfiguration([
