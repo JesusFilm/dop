@@ -9,9 +9,12 @@ import {
   findSessionBySetupPath,
   findSubmissionByDeviceToken,
   findSubmissionByRecoveryCode,
+  freezePairing,
   getGroupAssignment,
   updateSubmission,
   type DataClient,
+  type FreezePairingResult,
+  type PairingClient,
 } from "@/lib/repository";
 
 /**
@@ -361,6 +364,300 @@ describe("getGroupAssignment", () => {
   });
 });
 
+/**
+ * A fake {@link PairingClient} whose `$transaction` runs the callback with the
+ * supplied transaction delegates immediately (no real database). Only the
+ * delegate methods a given test exercises need to be provided; `$queryRaw`
+ * (the advisory lock) defaults to a no-op.
+ */
+function fakePairingClient(tx: {
+  $queryRaw?: unknown;
+  session?: Record<string, unknown>;
+  submission?: Record<string, unknown>;
+  group?: Record<string, unknown>;
+}): PairingClient {
+  const transactionClient = {
+    $queryRaw: tx.$queryRaw ?? vi.fn().mockResolvedValue([]),
+    session: tx.session,
+    submission: tx.submission,
+    group: tx.group,
+  };
+  return {
+    $transaction: (fn: (client: unknown) => unknown) => fn(transactionClient),
+  } as unknown as PairingClient;
+}
+
+const REVEAL_AT = new Date("2026-07-27T23:00:00.000Z");
+const AFTER_REVEAL = new Date("2026-07-27T23:00:01.000Z");
+
+describe("freezePairing", () => {
+  it("computes, writes groups, and stamps pairingFrozenAt when unfrozen", async () => {
+    const advisoryLock = vi.fn().mockResolvedValue([]);
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "sess_1",
+      revealAt: REVEAL_AT,
+      pairingFrozenAt: null,
+    });
+    const findMany = vi
+      .fn()
+      .mockResolvedValue([{ id: "a" }, { id: "b" }, { id: "c" }]);
+    const groupCreate = vi.fn().mockResolvedValue({});
+    const sessionUpdate = vi.fn().mockResolvedValue({});
+
+    const client = fakePairingClient({
+      $queryRaw: advisoryLock,
+      session: { findUnique, update: sessionUpdate },
+      submission: { findMany },
+      group: { create: groupCreate },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+      // A near-1 random keeps Fisher–Yates from moving anything, so the
+      // asserted grouping is deterministic.
+      random: () => 0.999999,
+    });
+
+    // The session lock is taken (concurrent triggers serialize on it).
+    expect(advisoryLock).toHaveBeenCalledTimes(1);
+    // n=3 → exactly one trio written.
+    expect(groupCreate).toHaveBeenCalledTimes(1);
+    expect(groupCreate.mock.calls[0][0]).toEqual({
+      data: { sessionId: "sess_1", memberSubmissionIds: ["a", "b", "c"] },
+    });
+    // Only the reveal-cutoff submissions are read, ids only (Privacy #3).
+    expect(findMany).toHaveBeenCalledWith({
+      where: { sessionId: "sess_1", createdAt: { lt: REVEAL_AT } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    // The freeze instant is the app clock's, stamped last.
+    expect(sessionUpdate).toHaveBeenCalledWith({
+      where: { id: "sess_1" },
+      data: { pairingFrozenAt: AFTER_REVEAL },
+    });
+
+    expect(result).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt: AFTER_REVEAL,
+      alreadyFrozen: false,
+      groupCount: 1,
+    });
+  });
+
+  it("splits an even count into pairs and never writes a trio", async () => {
+    const groupCreate = vi.fn().mockResolvedValue({});
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      submission: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: "a" },
+            { id: "b" },
+            { id: "c" },
+            { id: "d" },
+          ]),
+      },
+      group: { create: groupCreate },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+      random: () => 0.999999,
+    });
+
+    expect(groupCreate).toHaveBeenCalledTimes(2);
+    expect(groupCreate.mock.calls[0][0].data.memberSubmissionIds).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(groupCreate.mock.calls[1][0].data.memberSubmissionIds).toEqual([
+      "c",
+      "d",
+    ]);
+    expect(result).toMatchObject({ status: "frozen", groupCount: 2 });
+  });
+
+  it("writes no group for the lone n=1 person but still freezes", async () => {
+    const groupCreate = vi.fn().mockResolvedValue({});
+    const sessionUpdate = vi.fn().mockResolvedValue({});
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: sessionUpdate,
+      },
+      submission: { findMany: vi.fn().mockResolvedValue([{ id: "a" }]) },
+      group: { create: groupCreate },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+    });
+
+    // Never self-matched: no group is written.
+    expect(groupCreate).not.toHaveBeenCalled();
+    // The freeze still happened so it is not retried forever.
+    expect(sessionUpdate).toHaveBeenCalledTimes(1);
+    expect(result).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt: AFTER_REVEAL,
+      alreadyFrozen: false,
+      groupCount: 0,
+    });
+  });
+
+  it("returns the existing frozen result without recomputing (write-once)", async () => {
+    const frozenAt = new Date("2026-07-27T23:00:05.000Z");
+    const findMany = vi.fn();
+    const groupCreate = vi.fn();
+    const sessionUpdate = vi.fn();
+
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: frozenAt,
+        }),
+        update: sessionUpdate,
+      },
+      submission: { findMany },
+      group: { create: groupCreate, count: vi.fn().mockResolvedValue(4) },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+    });
+
+    // A frozen pairing never recomputes: no submissions read, no writes.
+    expect(findMany).not.toHaveBeenCalled();
+    expect(groupCreate).not.toHaveBeenCalled();
+    expect(sessionUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt,
+      alreadyFrozen: true,
+      groupCount: 4,
+    });
+  });
+
+  it("computes once across repeated triggers on the same session (single-winner)", async () => {
+    // Model the single-winner sequence a real advisory lock produces: the
+    // winner freezes; a later trigger sees the committed `pairingFrozenAt` and
+    // reads it back rather than recomputing. A stateful fake session row stands
+    // in for the row the lock serializes access to.
+    const sessionRow = {
+      id: "sess_1",
+      revealAt: REVEAL_AT,
+      pairingFrozenAt: null as Date | null,
+    };
+    let groupRows = 0;
+    const groupCreate = vi.fn().mockImplementation(async () => {
+      groupRows += 1;
+      return {};
+    });
+
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockImplementation(async () => ({ ...sessionRow })),
+        update: vi.fn().mockImplementation(async ({ data }) => {
+          sessionRow.pairingFrozenAt = data.pairingFrozenAt;
+          return {};
+        }),
+      },
+      submission: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "a" }, { id: "b" }, { id: "c" }]),
+      },
+      group: {
+        create: groupCreate,
+        count: vi.fn().mockImplementation(async () => groupRows),
+      },
+    });
+
+    const first = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: AFTER_REVEAL,
+      random: () => 0.999999,
+    });
+    const second = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: new Date("2026-07-27T23:05:00.000Z"),
+      random: () => 0.999999,
+    });
+
+    // Exactly one compute: the trio is written once, never a second time.
+    expect(groupCreate).toHaveBeenCalledTimes(1);
+    expect(first).toMatchObject({ alreadyFrozen: false, groupCount: 1 });
+    // The loser reads the frozen result — same freeze instant, never recomputed.
+    expect(second).toEqual<FreezePairingResult>({
+      status: "frozen",
+      frozenAt: AFTER_REVEAL,
+      alreadyFrozen: true,
+      groupCount: 1,
+    });
+  });
+
+  it("refuses to freeze before the reveal instant (app-clock authority)", async () => {
+    const findMany = vi.fn();
+    const groupCreate = vi.fn();
+    const sessionUpdate = vi.fn();
+
+    const client = fakePairingClient({
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: sessionUpdate,
+      },
+      submission: { findMany },
+      group: { create: groupCreate },
+    });
+
+    const result = await freezePairing(client, {
+      sessionId: "sess_1",
+      now: new Date("2026-07-27T22:59:59.000Z"),
+    });
+
+    expect(findMany).not.toHaveBeenCalled();
+    expect(groupCreate).not.toHaveBeenCalled();
+    expect(sessionUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual<FreezePairingResult>({
+      status: "not-open",
+      revealAt: REVEAL_AT,
+    });
+  });
+
+  it("throws when the session does not exist", async () => {
+    const client = fakePairingClient({
+      session: { findUnique: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(
+      freezePairing(client, { sessionId: "missing", now: AFTER_REVEAL }),
+    ).rejects.toThrow(/session missing not found/);
+  });
+});
+
 describe("data-access surface (Privacy #3)", () => {
   it("exposes no function that lists or returns all requests for a session", () => {
     const exported = Object.keys(repository).filter(
@@ -379,6 +676,7 @@ describe("data-access surface (Privacy #3)", () => {
         "findSessionBySetupPath",
         "findSubmissionByDeviceToken",
         "findSubmissionByRecoveryCode",
+        "freezePairing",
         "getGroupAssignment",
         "updateSubmission",
       ].sort(),
