@@ -3,6 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
+const LIVE_POLL_INTERVAL_MS = 1_000;
+const FAILED_POLL_INTERVAL_MS = 2_000;
+const MAX_FAILED_POLL_INTERVAL_MS = 10_000;
+
+export function getLiveSnapshotPollDelay(
+  isDisconnected: boolean,
+  failureCount: number,
+) {
+  return isDisconnected
+    ? Math.min(
+        MAX_FAILED_POLL_INTERVAL_MS,
+        FAILED_POLL_INTERVAL_MS * failureCount,
+      )
+    : LIVE_POLL_INTERVAL_MS;
+}
+
 export function useLiveSnapshot<T extends { revision: number }>(
   initial: T,
   endpoint: string,
@@ -38,14 +54,18 @@ export function useLiveSnapshot<T extends { revision: number }>(
         await refresh();
       }
       if (!stopped) {
-        const delay = isDisconnected
-          ? Math.min(10_000, 2_000 * failures.current)
-          : 2_000;
+        const delay = getLiveSnapshotPollDelay(
+          isDisconnected,
+          failures.current,
+        );
         timeout = setTimeout(poll, delay);
       }
     }
 
-    timeout = setTimeout(poll, 2_000);
+    timeout = setTimeout(
+      poll,
+      getLiveSnapshotPollDelay(isDisconnected, failures.current),
+    );
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refresh();
     };

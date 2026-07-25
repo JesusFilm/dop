@@ -22,9 +22,10 @@ storing only its SHA-256 digest. Encrypt non-empty personal prayer requests with
 AES-256-GCM using `PRAYER_REQUEST_ENCRYPTION_KEY`.
 
 Expose separate participant and organizer snapshots through App Router Route
-Handlers. Clients poll the authoritative snapshots while visible; no process
-memory is authoritative. The organizer projection contains names, rooms, and
-coordinator state but never prayer-request fields.
+Handlers. Clients poll the authoritative snapshots every second while visible,
+with slower retries after failures; no process memory is authoritative. The
+organizer projection contains names, rooms, and coordinator state but never
+prayer-request fields.
 
 ## Consequences
 
