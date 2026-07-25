@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as repository from "@/lib/repository";
 import {
+  countGroups,
   countSubmissions,
   createSession,
   createSubmission,
@@ -807,6 +808,20 @@ describe("freezePairing", () => {
   });
 });
 
+describe("countGroups", () => {
+  it("returns a bare count and never group membership or requests (Privacy #3)", () => {
+    const count = vi.fn().mockResolvedValue(7);
+    const client = fakeClient({ group: { count } });
+
+    countGroups(client, "sess_1");
+
+    // No `select`, no `include`, no member ids — the whole point is that this
+    // tells the return view "did the pairing produce anything" without reading
+    // who is in which group.
+    expect(count).toHaveBeenCalledWith({ where: { sessionId: "sess_1" } });
+  });
+});
+
 describe("data-access surface (Privacy #3)", () => {
   it("exposes no function that lists or returns all requests for a session", () => {
     const exported = Object.keys(repository).filter(
@@ -818,6 +833,7 @@ describe("data-access surface (Privacy #3)", () => {
     // future "list all requests" accessor sneaking into the boundary.
     expect(exported.sort()).toEqual(
       [
+        "countGroups",
         "countSubmissions",
         "createSession",
         "createSubmission",

@@ -109,10 +109,17 @@ describe("formatZonedTime", () => {
       formatZonedTime(new Date("2026-07-27T02:30:00.000Z"), AUCKLAND),
     ).toBe("14:30");
   });
+
+  it("renders a submit instant for the return view's 'shared at' label (§7.3)", () => {
+    // 09:41 on Mon 27 Jul in Auckland — the other caller of this helper.
+    expect(
+      formatZonedTime(new Date("2026-07-26T21:41:00.000Z"), AUCKLAND),
+    ).toBe("09:41");
+  });
 });
 
 describe("formatZonedWeekdayTime", () => {
-  it("reads as the §7.2 “11:00 on Monday” phrase", () => {
+  it("reads as the §7.2 \u201c11:00 on Monday\u201d phrase", () => {
     expect(
       formatZonedWeekdayTime(new Date("2026-07-26T23:00:00.000Z"), AUCKLAND),
     ).toBe("11:00 on Monday");

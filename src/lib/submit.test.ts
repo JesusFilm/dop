@@ -5,6 +5,7 @@ import {
   isBeforeReveal,
   STARTER_CHIPS,
   submissionsCloseLine,
+  submissionsClosedLine,
   SUBMIT_COPY,
   validateSubmissionForm,
 } from "@/lib/submit";
@@ -35,6 +36,22 @@ describe("submissionsCloseLine", () => {
     expect(submissionsCloseLine("Tue, 28 Jul 2026, 09:30")).toContain(
       "Tue, 28 Jul 2026, 09:30",
     );
+  });
+});
+
+describe("submissionsClosedLine", () => {
+  it("states the cutoff in the past tense for a late arrival (§6, §10)", () => {
+    expect(submissionsClosedLine("Mon, 27 Jul 2026, 11:00")).toBe(
+      "Submissions closed at Mon, 27 Jul 2026, 11:00, so a new request can't be added now.",
+    );
+  });
+});
+
+describe("SUBMIT_COPY.closedHeading", () => {
+  it("leads the post-cutoff screen with the true thing, not a guess", () => {
+    // A visitor with no entry after the reveal may be a latecomer who never
+    // submitted, so the heading must not assume they are on a second phone.
+    expect(SUBMIT_COPY.closedHeading).toBe("Submissions have closed");
   });
 });
 
