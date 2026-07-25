@@ -1,0 +1,26 @@
+# Railway config for the **auto-purge cron service** (§8.4, §10, #8).
+#
+# This is a second service in the same Railway project, deployed from this same
+# repo, with its config-as-code path pointed at this file instead of
+# `railway.toml` (see README, "Auto-purge"). It has no web server and no
+# healthcheck: Railway starts the container on the schedule, `pnpm purge` runs
+# once, and the container exits.
+#
+# The schedule is only a **trigger** — the app's own clock owns the purge moment,
+# exactly as it does for the reveal (§5). `pnpm purge` deletes only sessions
+# whose organizer-derived `purgeAfter` instant has already passed, so an hourly
+# trigger is idempotent, a no-op when nothing is due, and self-heals a missed or
+# drifted run within the hour. That also keeps it correct across NZDT/NZST
+# without a DST-specific expression.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "pnpm purge"
+# Hourly, UTC. The next-morning purge fires on the first run at/after the
+# session's purgeAfter (Monday's event: Tue 06:00 Pacific/Auckland = Mon 18:00 UTC).
+cronSchedule = "0 * * * *"
+# A cron run is a one-shot job: a completed run must not be restarted, and a
+# failed run is retried by the next hourly trigger rather than by a restart loop.
+restartPolicyType = "NEVER"

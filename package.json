@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "prisma:validate": "prisma validate",
     "db:check": "prisma generate && tsx scripts/check-database.ts",
+    "purge": "tsx scripts/purge-submissions.ts",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm prisma:validate && pnpm build",
     "postinstall": "prisma generate"
   },

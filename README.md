@@ -92,9 +92,80 @@ Railway dashboard. After this, every push to the default branch auto-deploys.
      `{"status":"ok","database":"ok",...}`. That confirms push-to-deploy + app +
      Postgres end-to-end.
 
-> Later tickets add Railway **cron** services (reveal backstop, next-morning
-> purge). Those are separate cron services in the same project pointing at
-> in-app routes — not needed for this scaffold.
+> A later ticket adds the Railway **cron** service for the reveal backstop. The
+> next-morning purge cron is set up below.
+
+## Auto-purge (next-morning delete)
+
+All submissions are deleted the morning after the event (spec §8.4, §10,
+Privacy #3). The organizer's setup-page **submission count is the verification
+view**: once the purge has run it reads **0**.
+
+The `Session` row (times, setup path, QR) is kept on purpose — it is what makes
+that verification view renderable. Only the submissions and their derived groups
+are deleted.
+
+The purge instant (`purgeAfter`) is derived at setup from the event date: the
+next day at **06:00 Pacific/Auckland**. The schedule below is only a **trigger** —
+`pnpm purge` deletes only sessions whose `purgeAfter` has already passed, so it
+is idempotent, a no-op when nothing is due, and self-heals a missed run.
+
+### One-time Railway setup
+
+1. **Add a second service from this repo**
+   - Railway → project → **New** → **GitHub Repo** → `JesusFilm/dop`.
+   - Name it e.g. `purge-cron`.
+2. **Point it at the cron config**
+   - Service → **Settings → Config-as-code** → set the file path to
+     `railway.purge.toml`. That file sets `startCommand = "pnpm purge"`, the
+     hourly `cronSchedule`, and `restartPolicyType = "NEVER"` (a cron run is a
+     one-shot job, not a long-running server). No healthcheck — the container
+     exits when the job finishes.
+3. **Give it the database**
+   - Service → **Variables** → `DATABASE_URL` = `${{ Postgres.DATABASE_URL }}`
+     (same reference as the app service; leave `PGSSLMODE` unset on the private
+     network).
+4. **Verify**
+   - Service → **Deployments** → trigger a run and read the logs: with nothing
+     due it logs `Auto-purge: nothing due at …`.
+   - The morning after the event, open the setup page — the count reads **0**.
+
+### If the cron did not fire
+
+Check the setup page first: a count above 0 the morning after the event means
+the purge has not run. Then, in order of preference:
+
+1. **Run the job by hand** (preferred — same code path, same safety checks).
+   Locally with the Railway database URL, or from Railway's shell on either
+   service:
+
+   ```bash
+   pnpm purge
+   ```
+
+2. **Manual DB delete** (fallback when the app or its tooling is unavailable).
+   Railway → **Postgres service → Data / Query**, or `psql "$DATABASE_URL"`:
+
+   ```sql
+   -- Delete the derived groups first, then the submissions they reference.
+   -- Keep the sessions row so the setup page still renders the 0 count.
+   -- Column names are quoted camelCase (Prisma default).
+   BEGIN;
+   DELETE FROM "groups"
+   WHERE "sessionId" IN (SELECT "id" FROM "sessions" WHERE "purgeAfter" <= now());
+   DELETE FROM "submissions"
+   WHERE "sessionId" IN (SELECT "id" FROM "sessions" WHERE "purgeAfter" <= now());
+   COMMIT;
+   ```
+
+   To purge a specific session regardless of its purge time, replace the
+   sub-select with `WHERE "sessionId" = '<session id>'`. Confirm with:
+
+   ```sql
+   SELECT count(*) FROM "submissions";   -- expect 0
+   ```
+
+   Then reload the setup page — the count reads **0**.
 
 ## Agent contributors
 

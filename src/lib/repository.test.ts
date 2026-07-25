@@ -5,8 +5,10 @@ import {
   countSubmissions,
   createSession,
   createSubmission,
+  deleteSessionData,
   findCurrentSession,
   findSessionBySetupPath,
+  findSessionsDueForPurge,
   findSubmissionByDeviceToken,
   findSubmissionByRecoveryCode,
   getGroupAssignment,
@@ -199,6 +201,56 @@ describe("countSubmissions", () => {
   });
 });
 
+describe("findSessionsDueForPurge", () => {
+  it("selects only sessions whose purge instant has passed, oldest first", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const client = fakeClient({ session: { findMany } });
+    const now = new Date("2026-07-27T18:00:30.000Z");
+
+    await findSessionsDueForPurge(client, now);
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { purgeAfter: { lte: now } },
+      select: { id: true, name: true, purgeAfter: true },
+      orderBy: { purgeAfter: "asc" },
+    });
+  });
+});
+
+describe("deleteSessionData", () => {
+  it("deletes the session's groups and submissions and reports the counts", async () => {
+    const submissionDeleteMany = vi.fn().mockResolvedValue({ count: 97 });
+    const groupDeleteMany = vi.fn().mockResolvedValue({ count: 48 });
+    const client = fakeClient({
+      submission: { deleteMany: submissionDeleteMany },
+      group: { deleteMany: groupDeleteMany },
+    });
+
+    const result = await deleteSessionData(client, "sess_1");
+
+    expect(groupDeleteMany).toHaveBeenCalledWith({
+      where: { sessionId: "sess_1" },
+    });
+    expect(submissionDeleteMany).toHaveBeenCalledWith({
+      where: { sessionId: "sess_1" },
+    });
+    expect(result).toEqual({ submissionsDeleted: 97, groupsDeleted: 48 });
+  });
+
+  it("keeps the Session row itself so the setup page can verify the purge", async () => {
+    const sessionDelete = vi.fn();
+    const client = fakeClient({
+      session: { delete: sessionDelete, deleteMany: sessionDelete },
+      submission: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      group: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    });
+
+    await deleteSessionData(client, "sess_1");
+
+    expect(sessionDelete).not.toHaveBeenCalled();
+  });
+});
+
 describe("getGroupAssignment", () => {
   it("returns null when the caller is not in a frozen group yet", async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
@@ -375,8 +427,10 @@ describe("data-access surface (Privacy #3)", () => {
         "countSubmissions",
         "createSession",
         "createSubmission",
+        "deleteSessionData",
         "findCurrentSession",
         "findSessionBySetupPath",
+        "findSessionsDueForPurge",
         "findSubmissionByDeviceToken",
         "findSubmissionByRecoveryCode",
         "getGroupAssignment",

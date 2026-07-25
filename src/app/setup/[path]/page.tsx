@@ -114,6 +114,12 @@ export default async function SetupPage({
               {formatZonedDateTime(session.revealAt, session.timeZone)}
             </dd>
           </div>
+          <div>
+            <dt style={{ color: "#555", display: "inline" }}>Data purge: </dt>
+            <dd style={{ display: "inline", margin: 0 }}>
+              {formatZonedDateTime(session.purgeAfter, session.timeZone)}
+            </dd>
+          </div>
         </dl>
         <p style={{ color: "#888", fontSize: "0.85rem", margin: 0 }}>
           Times shown in {session.timeZone}.
@@ -125,9 +131,27 @@ export default async function SetupPage({
           border: "1px solid #eee",
           borderRadius: "0.75rem",
           padding: "1.25rem",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.75rem",
         }}
       >
         <SubmissionCount path={path} initialCount={initialCount} />
+        {/* The count doubles as the purge-verification view (§8.4, #8): once
+            the next-morning job has run it reads 0, which is the organizer's
+            confirmation that the requests are gone. */}
+        <p
+          style={{
+            color: "#888",
+            fontSize: "0.85rem",
+            margin: 0,
+            textAlign: "center",
+          }}
+        >
+          After the data purge on{" "}
+          {formatZonedDateTime(session.purgeAfter, session.timeZone)} this count
+          reads 0 — that is your confirmation the requests are deleted.
+        </p>
       </section>
     </main>
   );
