@@ -1,3 +1,6 @@
+# Deploy config for the **web app service**. Railway config-as-code is per
+# service; the auto-purge cron service uses `railway.purge.toml`.
+
 [build]
 builder = "NIXPACKS"
 

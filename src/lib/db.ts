@@ -31,6 +31,34 @@ export function buildDatabaseConfig(
 }
 
 /**
+ * A human-readable, credential-free description of which database a connection
+ * string points at — `host:port/database`.
+ *
+ * Exists so a destructive job can say out loud which database it acted on. The
+ * auto-purge fallback is run by hand from a laptop that has its own `.env`
+ * pointing at local Postgres, so "deleted 0 rows" is otherwise indistinguishable
+ * from "you just purged the wrong database". Username and password are dropped:
+ * this string goes to logs.
+ */
+export function describeDatabaseTarget(
+  connectionString: string | undefined,
+): string {
+  if (!connectionString) {
+    return "unknown (DATABASE_URL unset)";
+  }
+
+  try {
+    const url = new URL(connectionString);
+    const database = url.pathname.replace(/^\//, "");
+    return database ? `${url.host}/${database}` : url.host;
+  } catch {
+    // Never let a logging nicety break the job; the connection attempt itself
+    // surfaces a malformed URL.
+    return "unknown (unparsable URL)";
+  }
+}
+
+/**
  * Returns the shared Prisma client, creating it on first use.
  *
  * Next.js can re-evaluate modules during development, so the client lives on

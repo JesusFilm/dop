@@ -47,6 +47,9 @@ Do not vendor plugin source or generated plugin state.
 - Run `pnpm verify` before delivery.
 - Run `pnpm db:check` against PostgreSQL when persistence configuration changes.
 - Keep secrets out of version control and update `.env.example` when environment requirements change.
-- Keep Railway deployment behavior in `railway.toml`.
+- Keep Railway deployment behavior in the repo's `railway*.toml` config files —
+  `railway.toml` for the web app service, and one file per additional Railway
+  service (config-as-code is per service, so e.g. the auto-purge cron service
+  points its config path at `railway.purge.toml`).
 - Treat `main` as the production source branch and deliver changes through reviewed pull requests.
 - Do not write execution progress into `docs/plans/`.

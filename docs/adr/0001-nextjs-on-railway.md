@@ -40,3 +40,20 @@ deferred to ticket #2** (Data model + migrations).
   (pnpm start command + `/api/health` healthcheck).
 - Ticket #2 extends the model-free Prisma schema with the locked domain model
   and migrations rather than replacing the connection layer.
+
+## Amendments
+
+- **Amended by [#24](https://github.com/JesusFilm/dop/issues/24) (auto-purge
+  job):** the next-morning purge does **not** hit an in-app route as the "One
+  deploy pipeline" reasoning above anticipated. It runs as a **second Railway
+  service** (`railway.purge.toml`, `pnpm purge`) talking to Postgres on the
+  private network. An in-app route that deletes every due session's requests
+  would be an internet-reachable destructive endpoint needing its own shared
+  secret; the cron service already holds `DATABASE_URL` and has no public
+  domain. The single-service reasoning still stands for the web app itself —
+  what changed is that scheduled work gets its own service rather than a route.
+  Railway config-as-code is per service, so each such service adds a
+  `railway*.toml` (see `AGENTS.md`). If the reveal triggers ticket
+  ([#22](https://github.com/JesusFilm/dop/issues/22)) lands its cron backstop as
+  a second cron service, replace this amendment with an ADR on how scheduled work
+  runs.

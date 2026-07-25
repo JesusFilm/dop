@@ -23,7 +23,10 @@ import type {
  * delegate operations the data-access boundary is allowed to perform. The real
  * {@link PrismaClient} satisfies it.
  */
-export type DataClient = Pick<PrismaClient, "session" | "submission" | "group">;
+export type DataClient = Pick<
+  PrismaClient,
+  "session" | "submission" | "group" | "$transaction"
+>;
 
 export interface CreateSessionInput {
   name: string;
@@ -198,6 +201,67 @@ export function countSubmissions(
   sessionId: string,
 ): Promise<number> {
   return client.submission.count({ where: { sessionId } });
+}
+
+/** A session the auto-purge job has found to be due (§8, §10). */
+export interface SessionDueForPurge {
+  id: string;
+  name: string;
+}
+
+/** Row counts a purge removed, for the job's log. */
+export interface PurgeCounts {
+  submissionsDeleted: number;
+  groupsDeleted: number;
+}
+
+/**
+ * The sessions whose next-morning purge instant has passed (§8, #8). Selects
+ * the id and name only — never submission content (Privacy #3). Ordered by
+ * purge instant, oldest first, so the job's log reads chronologically.
+ */
+export function findSessionsDueForPurge(
+  client: DataClient,
+  now: Date,
+): Promise<SessionDueForPurge[]> {
+  return client.session.findMany({
+    where: { purgeAfter: { lte: now } },
+    select: { id: true, name: true },
+    orderBy: { purgeAfter: "asc" },
+  });
+}
+
+/**
+ * Deletes a session's submissions, plus the groups derived from them (§8, §10 —
+ * "all data is auto-deleted the next morning"). Both deletes run in **one
+ * transaction**: a half-done purge that left the requests behind would be a
+ * Privacy #3 failure, so either both row sets go or neither does. Groups are
+ * deleted first so no intermediate state inside the transaction has a group
+ * referencing submission ids that are already gone — `memberSubmissionIds` is a
+ * plain id array with no foreign key to enforce that ordering for us.
+ *
+ * Two rows are deliberately left alone. The `Session` itself stays because the
+ * organizer's setup page needs it to render, and its submission count reading
+ * **0** is the purge-verification view (#8). `pairingFrozenAt` stays set because
+ * the freeze is write-once (§4): clearing it would re-open a settled session to
+ * a recompute rather than leaving it closed and empty.
+ *
+ * Returns the row counts removed so the job can log what it did without ever
+ * touching request content.
+ */
+export async function purgeSessionSubmissions(
+  client: DataClient,
+  sessionId: string,
+): Promise<PurgeCounts> {
+  const [groups, submissions] = await client.$transaction([
+    client.group.deleteMany({ where: { sessionId } }),
+    client.submission.deleteMany({ where: { sessionId } }),
+  ]);
+
+  return {
+    submissionsDeleted: submissions.count,
+    groupsDeleted: groups.count,
+  };
 }
 
 /**
