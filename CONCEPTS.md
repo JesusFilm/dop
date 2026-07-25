@@ -24,9 +24,17 @@ A write-once assignment binding participants together so each can see who they'r
 
 The named process that shuffles a Session's Submissions into Groups (pairs, with one larger Group when the count is odd). Runs once per Session.
 
+Which Submissions are eligible is decided by when each was **recorded**, and that is not guaranteed to be the same moment the app **accepted** it. A Submission accepted a hair before the Reveal time can therefore be recorded a hair after it and be left out of the Pairing entirely — see Unpaired.
+
 ### Pairing freeze
 
 The moment Pairing's result is committed and made permanent. It is single-winner and atomic: concurrent triggers at the boundary resolve to exactly one computation, and a frozen Group never changes.
+
+### Unpaired
+
+A Submission that was accepted, but that the Pairing left out of every Group — distinct from the lone participant, whose Session simply had too few Submissions to pair anyone at all.
+
+The distinction is load-bearing because the two are indistinguishable from the Submission's own point of view: in both cases it has no partner. Only the presence or absence of Groups elsewhere in the Session tells them apart, so a surface that reports on one must consult that before naming a cause. Unpaired is not supposed to happen, is resolved in person by an organizer, and — unlike the lone case — carries no explanation of why.
 
 ## Timing & reveal
 
