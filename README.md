@@ -25,6 +25,7 @@ Requires Node 22+, pnpm 10, and PostgreSQL 16.
 pnpm install
 cp .env.example .env
 pnpm exec prisma migrate deploy
+pnpm db:seed
 pnpm dev
 ```
 
@@ -73,9 +74,9 @@ For a remote non-production test environment, also set
 
 ## Event operation
 
-1. Before event operation, seed the physical rooms outside the application.
-   Every finite capacity must be at least two and at least one room must be
-   unlimited.
+1. Run `pnpm db:seed` once in each new environment to seed the physical rooms
+   outside the event-day application. Every finite capacity must be at least
+   two and at least one room must be unlimited.
 2. Open `/admin`, share the participant root link, and watch live provisional
    rosters fill in deterministic room order.
 3. Reveal once everyone expected has arrived. Existing assignments become

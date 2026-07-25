@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build && node scripts/prepare-standalone.mjs",
-    "start": "node .next/standalone/server.js",
+    "start": "HOSTNAME=0.0.0.0 node .next/standalone/server.js",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -19,6 +19,7 @@
     "load:room-handoff": "tsx scripts/load-room-handoff.ts",
     "prisma:validate": "prisma validate",
     "db:check": "prisma generate && tsx scripts/check-database.ts",
+    "db:seed": "prisma db seed",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm prisma:validate && pnpm build",
     "postinstall": "prisma generate"
   },
