@@ -22,8 +22,8 @@ const RECOVERY_LENGTH = 6;
  * A short, human-legible recovery code (#8) — the bearer credential shown once
  * at submit that restores the return view on any device. Drawn from an
  * unambiguous alphabet (no 0/O or 1/I) so it survives being read off a
- * screenshot. The confirmation screen that displays it lands in a later ticket
- * (§7.2); this ticket persists it as the schema requires.
+ * screenshot — which is exactly how the confirmation screen (§7.2) tells people
+ * to keep it.
  */
 export function generateRecoveryCode(): string {
   const bytes = randomBytes(RECOVERY_LENGTH);

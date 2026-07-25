@@ -36,6 +36,13 @@ const ENTRY_NOT_FOUND_MESSAGE = "We couldn't find your entry on this device.";
 const EDIT_LOCKED_MESSAGE =
   "Your request is locked in now — the reveal time has passed.";
 
+/**
+ * Where a *new* submission lands: the confirmation screen that shows the
+ * recovery code once (§7.2, #8). Already-submitted bounces still go to `/` —
+ * that device's entry already exists and its owner has seen their code.
+ */
+const CONFIRMATION_PATH = "/confirmed";
+
 /** Two days covers the open→reveal window and the next-morning return (§10). */
 const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
 
@@ -103,8 +110,8 @@ function targetMentions(error: unknown, field: string): boolean {
  * to the return view rather than creating a second, and the
  * `(sessionId, deviceToken)` unique index is the concurrency backstop.
  * Submissions hard-close at the reveal instant by app clock (§5/§6). A
- * `recoveryCode` is generated and persisted here (schema-required, #8); the
- * confirmation screen that reveals it lands in a later ticket (§7.2).
+ * `recoveryCode` is generated and persisted here (#8) and shown once on the
+ * confirmation screen this redirects to (§7.2).
  */
 export async function submitAction(
   _prevState: SubmitFormState,
@@ -202,7 +209,7 @@ export async function submitAction(
   }
 
   await setDeviceCookie(deviceToken);
-  redirect("/");
+  redirect(CONFIRMATION_PATH);
 }
 
 /**

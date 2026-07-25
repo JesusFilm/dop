@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   computePurgeAfter,
   formatZonedDateTime,
+  formatZonedTime,
+  formatZonedWeekdayTime,
   parseWallClock,
   PURGE_HOUR,
 } from "@/lib/time";
@@ -91,5 +93,35 @@ describe("formatZonedDateTime", () => {
     expect(formatted).toMatch(/11:00/);
     expect(formatted).toMatch(/2026/);
     expect(formatted).toMatch(/Jul/i);
+  });
+});
+
+describe("formatZonedTime", () => {
+  it("renders just the wall-clock time for the clock badge (§7.2)", () => {
+    // 2026-07-26T23:00Z is 11:00 Monday in Auckland (NZST, UTC+12).
+    expect(
+      formatZonedTime(new Date("2026-07-26T23:00:00.000Z"), AUCKLAND),
+    ).toBe("11:00");
+  });
+
+  it("uses a 24-hour clock so 14:30 never reads as 2:30", () => {
+    expect(
+      formatZonedTime(new Date("2026-07-27T02:30:00.000Z"), AUCKLAND),
+    ).toBe("14:30");
+  });
+});
+
+describe("formatZonedWeekdayTime", () => {
+  it("reads as the §7.2 “11:00 on Monday” phrase", () => {
+    expect(
+      formatZonedWeekdayTime(new Date("2026-07-26T23:00:00.000Z"), AUCKLAND),
+    ).toBe("11:00 on Monday");
+  });
+
+  it("names the weekday in the session's zone, not UTC", () => {
+    // 2026-07-26T23:00Z is still Sunday in UTC but already Monday in Auckland.
+    expect(
+      formatZonedWeekdayTime(new Date("2026-07-26T23:00:00.000Z"), "UTC"),
+    ).toBe("23:00 on Sunday");
   });
 });
