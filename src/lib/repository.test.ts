@@ -375,6 +375,8 @@ function fakePairingClient(tx: {
   session?: Record<string, unknown>;
   submission?: Record<string, unknown>;
   group?: Record<string, unknown>;
+  /** Captures the options passed as `$transaction`'s second argument. */
+  onOptions?: (options: unknown) => void;
 }): PairingClient {
   const transactionClient = {
     $queryRaw: tx.$queryRaw ?? vi.fn().mockResolvedValue([]),
@@ -383,7 +385,10 @@ function fakePairingClient(tx: {
     group: tx.group,
   };
   return {
-    $transaction: (fn: (client: unknown) => unknown) => fn(transactionClient),
+    $transaction: (fn: (client: unknown) => unknown, options: unknown) => {
+      tx.onOptions?.(options);
+      return fn(transactionClient);
+    },
   } as unknown as PairingClient;
 }
 
@@ -462,6 +467,41 @@ describe("freezePairing", () => {
       alreadyFrozen: false,
       groupCount: 1,
     });
+  });
+
+  it("pins explicit isolation, timeout, and maxWait on the transaction", async () => {
+    // The lock-wait shares the transaction's timeout budget, so the bounds are
+    // pinned rather than left to Prisma's silent defaults. A queued trigger must
+    // be allowed to wait out the winner, not abort mid-freeze.
+    let options: {
+      isolationLevel?: string;
+      timeout?: number;
+      maxWait?: number;
+    } = {};
+    const client = fakePairingClient({
+      onOptions: (received) => {
+        options = received as typeof options;
+      },
+      session: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "sess_1",
+          revealAt: REVEAL_AT,
+          pairingFrozenAt: null,
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      submission: {
+        findMany: vi.fn().mockResolvedValue([{ id: "a" }, { id: "b" }]),
+      },
+      group: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    });
+
+    await freezePairing(client, { sessionId: "sess_1", now: AFTER_REVEAL });
+
+    expect(options.isolationLevel).toBe("ReadCommitted");
+    // Timeout must exceed maxWait so the lock-wait has real headroom.
+    expect(options.timeout).toBeGreaterThan(options.maxWait ?? 0);
+    expect(options.maxWait).toBeGreaterThan(0);
   });
 
   it("splits an even count into pairs and never writes a trio", async () => {

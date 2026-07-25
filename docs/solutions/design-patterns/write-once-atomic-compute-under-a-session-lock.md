@@ -36,7 +36,7 @@ moment more than one thing can trigger it:
    load, and a manual "run it now" can all fire together. If each independently checks
    "not done yet?" and then computes, several of them pass the check before any writes,
    and you get **multiple divergent results** — duplicate rows, people assigned twice.
-2. **Partial writes.** The compute writes several derived rows *and* a "done" marker. If
+2. **Partial writes.** The compute writes several derived rows _and_ a "done" marker. If
    those don't commit as one unit, a reader can see rows without the marker (looks
    unfrozen, triggers a recompute) or the marker without rows (looks empty).
 
@@ -45,7 +45,7 @@ unmerged as of this writing): at the reveal instant, submissions are shuffled in
 and `Session.pairingFrozenAt` is stamped — once, permanently — even though a cron nudge, a
 participant's reveal-page load, and the organizer could all trigger it in the same second.
 It is the write-side companion to [server-authoritative time gating](./server-authoritative-time-gating.md),
-which owns *when* the boundary is; this owns *committing the result at* the boundary.
+which owns _when_ the boundary is; this owns _committing the result at_ the boundary.
 
 ## Guidance
 
@@ -53,14 +53,14 @@ Run the whole thing inside **one interactive transaction** that opens with a
 **per-key advisory lock**, and pin the isolation level so the lock is actually a
 single-winner. Five moving parts:
 
-**1. Take a session-scoped advisory lock as the first statement.** A Postgres *advisory
-lock* is an application-defined lock keyed by a number you choose — it guards a logical
+**1. Take a session-scoped advisory lock as the first statement.** A Postgres _advisory
+lock_ is an application-defined lock keyed by a number you choose — it guards a logical
 operation, not a row. Derive a stable 64-bit key from the entity id so different keys
 never block each other, and use the transaction-scoped variant so it auto-releases on
 commit or rollback:
 
 ```ts
-// src/lib/repository.ts:348 — first statement inside client.$transaction(...)
+// src/lib/repository.ts:365 — first statement inside client.$transaction(...)
 await tx.$queryRaw`SELECT pg_advisory_xact_lock(
   hashtextextended(${sessionId}, ${PAIRING_LOCK_SEED}::bigint))`;
 ```
@@ -68,28 +68,39 @@ await tx.$queryRaw`SELECT pg_advisory_xact_lock(
 Concurrent triggers for the same key queue here; the winner proceeds, the rest block.
 
 **2. Re-check the "done" marker after acquiring the lock, and short-circuit.** The loser
-unblocks *after* the winner commits, reads the now-set marker, and returns the existing
+unblocks _after_ the winner commits, reads the now-set marker, and returns the existing
 result without recomputing:
 
 ```ts
-// src/lib/repository.ts:363
+// src/lib/repository.ts:380
 if (session.pairingFrozenAt) {
   const groupCount = await tx.group.count({ where: { sessionId } });
-  return { status: "frozen", frozenAt: session.pairingFrozenAt,
-           alreadyFrozen: true, groupCount };
+  return {
+    status: "frozen",
+    frozenAt: session.pairingFrozenAt,
+    alreadyFrozen: true,
+    groupCount,
+  };
 }
 ```
 
 **3. Pin the isolation level to Read Committed — the lock alone is not enough.** For the
-loser's re-check in step 2 to *see* the winner's commit, its `SELECT` must take a fresh
+loser's re-check in step 2 to _see_ the winner's commit, its `SELECT` must take a fresh
 snapshot. Under Read Committed (Postgres' default) each statement does. Under Repeatable
 Read or Serializable the loser's snapshot is frozen at transaction start — it would miss
 the commit, conclude "not done," and recompute, producing duplicates. So the level is
-pinned explicitly, not left to the datasource default:
+pinned explicitly, not left to the datasource default. Pin the transaction's
+`timeout`/`maxWait` in the same options object too: the loser's lock-wait is charged
+against the transaction timeout, so relying on the driver's silent default risks a queued
+trigger aborting mid-wait instead of reading the frozen result — bound it deliberately:
 
 ```ts
-// src/lib/repository.ts:429 — the $transaction options argument
-{ isolationLevel: "ReadCommitted" }
+// src/lib/repository.ts:446 — the $transaction options argument
+{
+  isolationLevel: "ReadCommitted",
+  timeout: PAIRING_FREEZE_TIMEOUT_MS, // lock-wait + work share this budget
+  maxWait: PAIRING_FREEZE_MAX_WAIT_MS, // wait for a free pool connection
+}
 ```
 
 **4. Write the derived rows in one statement, then stamp the marker last.** Ordering the
@@ -97,14 +108,20 @@ pinned explicitly, not left to the datasource default:
 sees one without the other:
 
 ```ts
-// src/lib/repository.ts:400 — one INSERT for the whole result set
+// src/lib/repository.ts:417 — one INSERT for the whole result set
 if (groups.length > 0) {
   await tx.group.createMany({
-    data: groups.map(memberSubmissionIds => ({ sessionId, memberSubmissionIds })),
+    data: groups.map((memberSubmissionIds) => ({
+      sessionId,
+      memberSubmissionIds,
+    })),
   });
 }
-// src/lib/repository.ts:413 — stamp LAST, same transaction
-await tx.session.update({ where: { id: sessionId }, data: { pairingFrozenAt: now } });
+// src/lib/repository.ts:430 — stamp LAST, same transaction
+await tx.session.update({
+  where: { id: sessionId },
+  data: { pairingFrozenAt: now },
+});
 ```
 
 **5. Keep the pure logic out of the transaction.** The actual algorithm (shuffle, pair)
@@ -114,7 +131,9 @@ reads only the ids it needs, never sensitive columns.
 
 ```ts
 // src/lib/pairing.ts:50 — pure; the transaction calls it with already-read ids
-export function formGroups<T>(shuffledMembers: readonly T[]): T[][] { /* ... */ }
+export function formGroups<T>(shuffledMembers: readonly T[]): T[][] {
+  /* ... */
+}
 ```
 
 ## Why This Matters
@@ -122,7 +141,7 @@ export function formGroups<T>(shuffledMembers: readonly T[]): T[][] { /* ... */ 
 - **Single-winner is structural, not hopeful.** The advisory lock serializes the racing
   triggers on one pinned connection; the post-lock re-check turns every loser into a
   reader. Correctness does not depend on a unique constraint or on triggers being polite.
-- **Read Committed is load-bearing, so it is pinned.** The subtle bug is a *stricter*
+- **Read Committed is load-bearing, so it is pinned.** The subtle bug is a _stricter_
   isolation level silently breaking the guarantee — the loser recomputing off a stale
   snapshot. Naming the level in code documents the dependency and stops a future "let's
   make everything Serializable" change from reintroducing double-compute.
@@ -145,7 +164,7 @@ export function formGroups<T>(shuffledMembers: readonly T[]): T[][] { /* ... */ 
 **When not to:** a single serialized trigger (one cron, no other callers) may only need a
 conditional `UPDATE ... WHERE marker IS NULL` and no lock. If the derived rows carry a
 natural unique constraint, that constraint can be the single-winner mechanism instead of
-an advisory lock — but note it won't help when rows are written *before* the marker (as
+an advisory lock — but note it won't help when rows are written _before_ the marker (as
 here), since two lock-less winners would both pass the null-check and both insert.
 
 ## Examples
@@ -154,26 +173,38 @@ here), since two lock-less winners would both pass the null-check and both inser
 
 ```ts
 // Trigger A and Trigger B both run this concurrently:
-const s = await db.session.findUnique({ where: { id }, select: { pairingFrozenAt: true } });
-if (s.pairingFrozenAt) return existing;          // both read null — both fall through
-const groups = pair(await readSubmissions(id));  // both compute a DIFFERENT shuffle
-await db.group.createMany({ data: groups });     // duplicate group sets written
-await db.session.update({ where: { id }, data: { pairingFrozenAt: new Date() } });
+const s = await db.session.findUnique({
+  where: { id },
+  select: { pairingFrozenAt: true },
+});
+if (s.pairingFrozenAt) return existing; // both read null — both fall through
+const groups = pair(await readSubmissions(id)); // both compute a DIFFERENT shuffle
+await db.group.createMany({ data: groups }); // duplicate group sets written
+await db.session.update({
+  where: { id },
+  data: { pairingFrozenAt: new Date() },
+});
 ```
 
 **After — advisory lock + Read Committed + create-then-stamp (exactly one winner):**
 
 ```ts
-return client.$transaction(async (tx) => {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${id}, ${SEED}::bigint))`;
-  const s = await tx.session.findUnique({ where: { id },
-    select: { revealAt: true, pairingFrozenAt: true } });
-  if (s.pairingFrozenAt) return readBack(tx, id);          // loser reads the winner's result
-  const groups = formGroups(shuffle(await readIds(tx, id)));
-  if (groups.length > 0) await tx.group.createMany({ data: rows(groups, id) });
-  await tx.session.update({ where: { id }, data: { pairingFrozenAt: now } });  // stamp last
-  return { frozen: true, groupCount: groups.length };
-}, { isolationLevel: "ReadCommitted" });
+return client.$transaction(
+  async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${id}, ${SEED}::bigint))`;
+    const s = await tx.session.findUnique({
+      where: { id },
+      select: { revealAt: true, pairingFrozenAt: true },
+    });
+    if (s.pairingFrozenAt) return readBack(tx, id); // loser reads the winner's result
+    const groups = formGroups(shuffle(await readIds(tx, id)));
+    if (groups.length > 0)
+      await tx.group.createMany({ data: rows(groups, id) });
+    await tx.session.update({ where: { id }, data: { pairingFrozenAt: now } }); // stamp last
+    return { frozen: true, groupCount: groups.length };
+  },
+  { isolationLevel: "ReadCommitted" },
+);
 ```
 
 The loser blocks at the lock, then — because Read Committed gives it a fresh snapshot —
@@ -183,8 +214,8 @@ sees `pairingFrozenAt` set and returns the existing result. One compute, ever.
 
 - Issue #21 (Pairing algorithm + write-once freeze) and PR #40 — the originating change.
 - [`server-authoritative-time-gating.md`](./server-authoritative-time-gating.md) — the
-  companion pattern: the app clock owns *when* the boundary is (issue #20), this owns
-  *committing the result at* it. Both read the same `isBeforeReveal` predicate
+  companion pattern: the app clock owns _when_ the boundary is (issue #20), this owns
+  _committing the result at_ it. Both read the same `isBeforeReveal` predicate
   (`src/lib/submit.ts`), which the freeze reuses to refuse an early trigger
   (`src/lib/repository.ts:378`).
 - `src/lib/pairing.ts` — the pure `formGroups` / `shuffle` algorithm (unit-tested on arrays).

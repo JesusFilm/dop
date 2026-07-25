@@ -273,6 +273,23 @@ export async function getGroupAssignment(
 const PAIRING_LOCK_SEED = 0x70726179; // "pray"
 
 /**
+ * Explicit interactive-transaction bounds for {@link freezePairing}, pinned
+ * rather than left to Prisma's defaults (2s `maxWait` / 5s `timeout`), which
+ * are silent and have shifted across Prisma versions.
+ *
+ * `timeout` bounds the whole callback — crucially, the time a losing trigger
+ * spends **blocked on the advisory lock** counts against it. The winner's work
+ * (read ids, shuffle, one `createMany`, one update) is milliseconds even for a
+ * full event, so a generous ceiling gives a queued loser ample room to wait out
+ * the winner and then read the frozen result, instead of aborting with a
+ * timeout error at the very reveal instant this design exists to handle
+ * gracefully. `maxWait` bounds the separate wait for a free pool connection —
+ * relevant because reveal is a thundering herd against a small pool.
+ */
+const PAIRING_FREEZE_TIMEOUT_MS = 15_000;
+const PAIRING_FREEZE_MAX_WAIT_MS = 10_000;
+
+/**
  * The Prisma surface {@link freezePairing} needs: interactive transactions. The
  * freeze runs several reads and writes as one atomic unit, so — unlike the
  * single-delegate helpers above that take a {@link DataClient} — it takes the
@@ -420,12 +437,19 @@ export async function freezePairing(
         groupCount: groups.length,
       };
     },
-    // Read Committed (Postgres' default, pinned explicitly) is what makes the
-    // advisory lock a correct single-winner: the loser blocks on the lock until
-    // the winner commits, then its `findUnique` reads a fresh snapshot and sees
-    // the committed `pairingFrozenAt`. Under Repeatable Read/Serializable the
-    // loser's snapshot would predate the commit and it would recompute, so the
-    // level is not left to the datasource default.
-    { isolationLevel: "ReadCommitted" },
+    {
+      // Read Committed (Postgres' default, pinned explicitly) is what makes the
+      // advisory lock a correct single-winner: the loser blocks on the lock
+      // until the winner commits, then its `findUnique` reads a fresh snapshot
+      // and sees the committed `pairingFrozenAt`. Under Repeatable
+      // Read/Serializable the loser's snapshot would predate the commit and it
+      // would recompute, so the level is not left to the datasource default.
+      isolationLevel: "ReadCommitted",
+      // Bound the lock-wait + work budget explicitly (see the constants above)
+      // so a queued trigger waits out the winner and reads the frozen result
+      // rather than aborting on Prisma's silent default timeout.
+      timeout: PAIRING_FREEZE_TIMEOUT_MS,
+      maxWait: PAIRING_FREEZE_MAX_WAIT_MS,
+    },
   );
 }
