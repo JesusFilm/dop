@@ -45,7 +45,7 @@ room of ~100 phones must all flip from "submit your request" to
 of cron drift.
 
 **A second surface proved the pattern is per-surface, not per-predicate** (issue #19, PR #43,
-unmerged as of this writing). The confirmation screen `src/app/confirmed/page.tsx` carried the
+merged). The confirmation screen `src/app/confirmed/page.tsx` carried the
 server gate faithfully — `redirect("/")` once `isRevealOpen` — but nothing else, and a
 server-side gate only runs when a request reaches the server. That page is precisely the one
 nobody sends a request from: it is where a participant lands right after submitting, and its
@@ -64,7 +64,7 @@ gate. Express "is it open yet?" as the exact logical complement of "is it still 
 _derive_ one from the other so they can never drift apart:
 
 ```ts
-// src/lib/submit.ts:161 — the one boundary definition (strict <)
+// src/lib/submit.ts:179 — the one boundary definition (strict <)
 export function isBeforeReveal(now: Date, revealAt: Date): boolean {
   return now.getTime() < revealAt.getTime();
 }
@@ -79,6 +79,17 @@ Because `isBeforeReveal` is strict (`<`), the boundary is **inclusive on the ope
 at the exact instant `now === revealAt`, submissions are closed _and_ the reveal is open
 ("close = reveal"). Both the submit cutoff and the reveal gate read from the same predicate,
 so they cannot disagree.
+
+**Scope that guarantee to the predicate's callers, not to the whole boundary.** One predicate
+removes contradictions _between the surfaces that call it_ — it says nothing about a comparison
+that never calls it. There is one such comparison at this same instant: the pairing filters
+which submissions are eligible on the **database's own** `createdAt` stamp, not the app clock
+that admitted them, so an entry accepted a hair before `revealAt` can be recorded a hair after
+it and be left out of the pairing entirely. Two clocks, one instant, and a write between them.
+Adding a surface behind this gate is safe; adding a _second timestamp source_ to the same
+boundary is the thing to look for. See
+[`empty-results-must-not-claim-their-cause.md`](./empty-results-must-not-claim-their-cause.md)
+for the reachable case and how the affected screen reports it honestly.
 
 **2. Gate on the server, read the clock once.** The server component reads `new Date()` a
 single time and derives every branch — and the countdown's anchor — from that one reading:
@@ -174,8 +185,11 @@ recovery code the participant may not have screenshotted yet.
 - **The countdown can't be gamed or broken by a wrong device clock.** Anchoring to a
   server-computed duration + monotonic elapsed time removes the client clock from the trust
   path entirely — for both correctness (step 4 gates on the server) and display (step 3).
-- **One predicate = no contradictory states.** Deriving `isRevealOpen` from `isBeforeReveal`
-  means a "submissions closed but reveal not open" gap is structurally impossible.
+- **One predicate = no contradictory states _among its callers_.** Deriving `isRevealOpen` from
+  `isBeforeReveal` means a "submissions closed but reveal not open" gap is structurally
+  impossible. It does not make every contradiction at the boundary impossible — a comparison
+  drawing its timestamp from somewhere else (the pairing's database-stamped eligibility filter)
+  can still disagree with the gate, which is why step 1 scopes the guarantee.
 - **Graceful under real network conditions.** Without the retry (step 5), a stale round-trip
   strands the user on `0:00` until a manual reload — worst at the exact moment of peak load.
   The retry turns that into a few-seconds catch-up. A _hard_ failure is caught by a coarser
@@ -229,12 +243,19 @@ the server's call.
 ## Related
 
 - Issue #20 (App-clock gating + hard cutoff) and PR #38 (merged) — the originating change.
-- Issue #19 (Confirmation + recovery code) and PR #43 — the second surface, which added the
-  re-gate to `src/app/confirmed/page.tsx` and established the redirect and failed-refresh
+- Issue #19 (Confirmation + recovery code) and PR #43 (merged) — the second surface, which added
+  the re-gate to `src/app/confirmed/page.tsx` and established the redirect and failed-refresh
   behavior documented in steps 4 and 5.
-- `src/app/page.tsx` and `src/app/confirmed/page.tsx` — the two call sites of the pattern.
-- `src/app/Countdown.tsx` — the shared re-gate component; its comments scope the retry to the
-  stale-response case (step 5).
+- Issue #23 (Return view) and PR #42 — the third surface, and the first where re-asking is
+  **bounded**: `src/app/AutoRefresh.tsx` waits out the gap between the reveal instant and the
+  pairing freeze, then stops and hands over a manual retry rather than polling forever. It is a
+  useful counter-shape to `Countdown.tsx`'s unbounded retry (step 5) — when the thing being
+  waited for may never arrive on its own, the give-up has to be visible, or the copy promising
+  the page will catch up quietly becomes false.
+- `src/app/page.tsx`, `src/app/confirmed/page.tsx`, and `src/app/ReturnView.tsx` — the call
+  sites of the pattern.
+- `src/app/Countdown.tsx` — the re-gate component shared by the pre-reveal surfaces; its
+  comments scope the retry to the stale-response case (step 5).
 - `src/lib/reveal.ts` — `isRevealOpen`, `msUntilReveal`, `formatCountdown` (pure, unit-tested).
 - `src/lib/submit.ts` — `isBeforeReveal`, the single boundary definition also used by the
   server-side submit/edit hard cutoff (`src/app/actions.ts`).
