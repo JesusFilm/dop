@@ -101,6 +101,12 @@ All submissions are deleted the morning after the event (spec §8.4, §10,
 Privacy #3). The organizer's setup-page **submission count is the verification
 view**: once the purge has run it reads **0**.
 
+A zero counts as verification only when you know it came from the event's
+database. The setup page always does — it is served by the app service, reading
+the same database the app writes to. A zero read anywhere else needs that check
+first, which is why `pnpm purge` names the database it acted on in every line it
+prints (see "If the cron did not fire" below).
+
 The `Session` row (times, setup path, QR) is kept on purpose — it is what makes
 that verification view renderable. Only the submissions and their derived groups
 are deleted.
