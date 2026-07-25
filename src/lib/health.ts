@@ -1,6 +1,7 @@
 export interface HealthReport {
   status: "ok" | "degraded";
   database: "ok" | "error";
+  configuration: "ok" | "error";
   /** ISO-8601 timestamp from the app's own clock. */
   time: string;
 }
@@ -14,14 +15,28 @@ export interface HealthReport {
  * decides the HTTP status from the report.
  */
 export async function buildHealthReport(
-  ping: () => Promise<void>,
+  checks: {
+    pingDatabase: () => Promise<void>;
+    validateConfiguration: () => void;
+  },
   now: () => Date = () => new Date(),
 ): Promise<HealthReport> {
   const time = now().toISOString();
-  try {
-    await ping();
-    return { status: "ok", database: "ok", time };
-  } catch {
-    return { status: "degraded", database: "error", time };
-  }
+  const [database, configuration] = await Promise.allSettled([
+    checks.pingDatabase(),
+    Promise.resolve().then(checks.validateConfiguration),
+  ]);
+  const databaseStatus = database.status === "fulfilled" ? "ok" : "error";
+  const configurationStatus =
+    configuration.status === "fulfilled" ? "ok" : "error";
+
+  return {
+    status:
+      databaseStatus === "ok" && configurationStatus === "ok"
+        ? "ok"
+        : "degraded",
+    database: databaseStatus,
+    configuration: configurationStatus,
+    time,
+  };
 }

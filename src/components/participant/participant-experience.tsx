@@ -1,0 +1,91 @@
+"use client";
+
+import { JoinForm } from "@/components/participant/join-form";
+import { LobbyStatus } from "@/components/participant/lobby-status";
+import { ParticipantHeader } from "@/components/participant/participant-header";
+import { RoomAssignment } from "@/components/participant/room-assignment";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import type { ParticipantSnapshot } from "@/lib/gathering/types";
+import { useLiveSnapshot } from "@/lib/use-live-snapshot";
+
+function JoinScreen({
+  onJoined,
+}: {
+  onJoined: (snapshot: ParticipantSnapshot) => void;
+}) {
+  return (
+    <>
+      <ParticipantHeader />
+      <main className="relative mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-5xl items-center justify-center overflow-hidden px-5 py-12 sm:px-8">
+        <div
+          aria-hidden="true"
+          className="absolute -left-48 top-0 size-[34rem] rounded-full bg-sky-100/45 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute -right-40 bottom-0 size-[30rem] rounded-full bg-primary-faint blur-3xl"
+        />
+        <section className="animate-fade-up relative w-full max-w-xl rounded-[2rem] bg-white/80 p-6 text-center shadow-ambient backdrop-blur sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+            Welcome
+          </p>
+          <h1 className="mt-4 font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+            Welcome to Day of Prayer
+          </h1>
+          <p className="mx-auto mt-4 max-w-md text-lg leading-7 text-ink-muted">
+            Enlightening the eyes of our hearts together.
+          </p>
+          <JoinForm onJoined={onJoined} />
+        </section>
+      </main>
+    </>
+  );
+}
+
+export function ParticipantExperience({
+  initialSnapshot,
+}: {
+  initialSnapshot: ParticipantSnapshot;
+}) {
+  const { snapshot, setSnapshot, isDisconnected } = useLiveSnapshot(
+    initialSnapshot,
+    "/api/participant",
+  );
+
+  async function takeOver() {
+    const response = await fetchWithTimeout("/api/participant/coordinator", {
+      method: "POST",
+    });
+    if (!response.ok) throw new Error("Coordinator update failed");
+    setSnapshot((await response.json()) as ParticipantSnapshot);
+  }
+
+  return (
+    <>
+      {isDisconnected ? (
+        <div
+          role="status"
+          className="bg-amber-50 px-4 py-2 text-center text-sm font-medium text-amber-900"
+        >
+          Reconnecting… Your place is saved.
+        </div>
+      ) : null}
+      {snapshot.state === "JOIN" ? (
+        <JoinScreen onJoined={setSnapshot} />
+      ) : snapshot.state === "LOBBY" ? (
+        <>
+          <ParticipantHeader />
+          <LobbyStatus
+            name={snapshot.participant.name}
+            participantCount={snapshot.participantCount}
+          />
+        </>
+      ) : (
+        <>
+          <ParticipantHeader />
+          <RoomAssignment snapshot={snapshot} onTakeover={takeOver} />
+        </>
+      )}
+    </>
+  );
+}

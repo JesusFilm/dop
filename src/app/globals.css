@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-source-sans);
+  --font-serif: var(--font-source-serif);
+
+  --color-background: #f9f9fc;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f3f3f6;
+  --color-surface-muted: #e8e8ea;
+  --color-ink: #1a1c1e;
+  --color-ink-muted: #3f4850;
+  --color-outline: #bec8d1;
+  --color-primary: #00628d;
+  --color-primary-strong: #004c6e;
+  --color-primary-soft: #d7e5eb;
+  --color-primary-faint: #eef7fb;
+  --color-danger: #ba1a1a;
+
+  --shadow-ambient: 0 12px 40px rgba(0, 98, 141, 0.08);
+  --shadow-card: 0 4px 20px rgba(0, 98, 141, 0.05);
+}
+
+@keyframes breathe-outer {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+}
+
+@keyframes breathe-inner {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+:root {
+  background: #f9f9fc;
+  color: #1a1c1e;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #f9f9fc;
+}
+
+body {
+  min-height: 100dvh;
+  margin: 0;
+  background:
+    radial-gradient(
+      circle at 8% 0%,
+      rgba(136, 206, 255, 0.13),
+      transparent 34rem
+    ),
+    #f9f9fc;
+  color: #1a1c1e;
+  font-family: var(--font-source-sans), system-ui, sans-serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(0, 98, 141, 0.24);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: #c8e6ff;
+  color: #001e2f;
+}
+
+.animate-fade-up {
+  animation: fade-up 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-modal-in {
+  animation: modal-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
