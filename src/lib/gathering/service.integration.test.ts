@@ -7,6 +7,7 @@ import {
   getParticipantSnapshot,
   joinParticipant,
   launchGathering,
+  removeRoom,
   resetGathering,
   takeOverCoordinator,
   updateRoom,
@@ -189,5 +190,32 @@ describe("gathering lifecycle", () => {
       await getParticipantSnapshot("waiting".padStart(64, "0")),
     ).toMatchObject({ state: "LOBBY" });
     expect(await getOrganizerSnapshot()).toMatchObject({ phase: "FORMING" });
+  });
+
+  it("preserves an unlimited room while allowing other rooms to be removed", async () => {
+    await addRoom({
+      name: "Unlimited Room",
+      directions: "",
+      maxCapacity: null,
+    });
+    await addRoom({
+      name: "Capped Room",
+      directions: "",
+      maxCapacity: 4,
+    });
+
+    const snapshot = await getOrganizerSnapshot();
+    const unlimited = snapshot.rooms.find(
+      ({ maxCapacity }) => maxCapacity === null,
+    );
+    const capped = snapshot.rooms.find(({ maxCapacity }) => maxCapacity === 4);
+    await expect(removeRoom(unlimited?.id ?? "")).rejects.toMatchObject({
+      code: "UNLIMITED_ROOM_REQUIRED",
+    });
+    await removeRoom(capped?.id ?? "");
+
+    expect((await getOrganizerSnapshot()).rooms).toMatchObject([
+      { name: "Unlimited Room", maxCapacity: null },
+    ]);
   });
 });

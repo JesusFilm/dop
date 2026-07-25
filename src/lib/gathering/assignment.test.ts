@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assignParticipantsToRooms,
   chooseCoordinator,
+  pickSmallestEligibleRoom,
 } from "@/lib/gathering/assignment";
 
 const stableRandom = () => 0.25;
@@ -71,5 +72,28 @@ describe("chooseCoordinator", () => {
 
   it("returns null for an empty room", () => {
     expect(chooseCoordinator([], stableRandom)).toBeNull();
+  });
+});
+
+describe("pickSmallestEligibleRoom", () => {
+  it("selects only among the smallest rooms with capacity", () => {
+    expect(
+      pickSmallestEligibleRoom(
+        [
+          { id: "full", maxCapacity: 2, participantCount: 2 },
+          { id: "small", maxCapacity: null, participantCount: 1 },
+          { id: "large", maxCapacity: null, participantCount: 3 },
+        ],
+        stableRandom,
+      )?.id,
+    ).toBe("small");
+  });
+
+  it("returns null when every room is full", () => {
+    expect(
+      pickSmallestEligibleRoom([
+        { id: "full", maxCapacity: 1, participantCount: 1 },
+      ]),
+    ).toBeNull();
   });
 });

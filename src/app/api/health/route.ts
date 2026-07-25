@@ -23,7 +23,10 @@ export async function GET() {
       try {
         await pingDatabase();
       } catch (error) {
-        console.error("[health] database ping failed:", error);
+        console.error(
+          "[health] database ping failed:",
+          error instanceof Error ? error.name : "UnknownError",
+        );
         throw error;
       }
     },
@@ -33,7 +36,7 @@ export async function GET() {
       } catch (error) {
         console.error(
           "[health] prayer-request encryption configuration failed:",
-          error,
+          error instanceof Error ? error.name : "UnknownError",
         );
         throw error;
       }

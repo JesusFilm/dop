@@ -69,10 +69,31 @@ export async function readJsonObject(
     throw new GatheringError("Request body is too large.", "BODY_TOO_LARGE");
   }
 
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_JSON_BODY_BYTES) {
-    throw new GatheringError("Request body is too large.", "BODY_TOO_LARGE");
+  const reader = request.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > MAX_JSON_BODY_BYTES) {
+        await reader.cancel();
+        throw new GatheringError(
+          "Request body is too large.",
+          "BODY_TOO_LARGE",
+        );
+      }
+      chunks.push(value);
+    }
   }
+
+  const text = new TextDecoder().decode(
+    chunks.length === 1
+      ? chunks[0]
+      : Uint8Array.from(chunks.flatMap((chunk) => [...chunk])),
+  );
 
   try {
     const value: unknown = JSON.parse(text);

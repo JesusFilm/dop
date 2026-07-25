@@ -3,6 +3,28 @@ export interface AssignableRoom {
   maxCapacity: number | null;
 }
 
+export function pickSmallestEligibleRoom<
+  T extends AssignableRoom & { participantCount: number },
+>(rooms: readonly T[], random: () => number = Math.random): T | null {
+  const eligible = rooms.filter(
+    (room) =>
+      room.maxCapacity === null || room.participantCount < room.maxCapacity,
+  );
+  if (eligible.length === 0) return null;
+
+  const smallestCount = Math.min(
+    ...eligible.map(({ participantCount }) => participantCount),
+  );
+  const candidates = eligible.filter(
+    ({ participantCount }) => participantCount === smallestCount,
+  );
+  return (
+    candidates[Math.floor(random() * candidates.length)] ??
+    candidates[0] ??
+    null
+  );
+}
+
 function shuffled<T>(values: readonly T[], random: () => number): T[] {
   const result = [...values];
 

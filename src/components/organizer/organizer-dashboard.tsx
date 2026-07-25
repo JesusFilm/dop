@@ -264,6 +264,16 @@ export function OrganizerDashboard({
     setRoomEditor(null);
   }
 
+  function openConfirmation(next: Confirmation) {
+    setError("");
+    setConfirmation(next);
+  }
+
+  function closeConfirmation() {
+    setError("");
+    setConfirmation(null);
+  }
+
   async function confirmAction() {
     if (!confirmation) return;
     try {
@@ -277,7 +287,7 @@ export function OrganizerDashboard({
       } else {
         await run("/api/organizer/reset");
       }
-      setConfirmation(null);
+      closeConfirmation();
     } catch {}
   }
 
@@ -311,7 +321,7 @@ export function OrganizerDashboard({
           <ActionButton
             tone="secondary"
             className="w-auto"
-            onClick={() => setConfirmation({ kind: "reset" })}
+            onClick={() => openConfirmation({ kind: "reset" })}
             disabled={isPending}
           >
             <RotateCcw aria-hidden="true" className="size-4" /> Reset gathering
@@ -357,7 +367,7 @@ export function OrganizerDashboard({
                   room={room}
                   canEdit={canEdit}
                   onEdit={() => setRoomEditor(room)}
-                  onRemove={() => setConfirmation({ kind: "remove", room })}
+                  onRemove={() => openConfirmation({ kind: "remove", room })}
                 />
               ))}
             </div>
@@ -409,7 +419,7 @@ export function OrganizerDashboard({
                   <ActionButton
                     disabled={isPending || !snapshot.capacitySufficient}
                     className="min-h-16 text-base"
-                    onClick={() => setConfirmation({ kind: "launch" })}
+                    onClick={() => openConfirmation({ kind: "launch" })}
                   >
                     Launch room assignment{" "}
                     <ArrowRight aria-hidden="true" className="size-5" />
@@ -448,7 +458,7 @@ export function OrganizerDashboard({
 
       <Modal
         open={confirmation !== null}
-        onClose={() => setConfirmation(null)}
+        onClose={closeConfirmation}
         title={
           confirmation?.kind === "launch"
             ? "Launch room assignment?"
@@ -465,6 +475,14 @@ export function OrganizerDashboard({
         }
       >
         <div className="flex flex-col gap-3">
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-2xl bg-danger/8 px-4 py-3 text-sm font-medium text-danger"
+            >
+              {error}
+            </p>
+          ) : null}
           <ActionButton
             tone={confirmation?.kind === "launch" ? "primary" : "danger"}
             onClick={confirmAction}
@@ -480,7 +498,7 @@ export function OrganizerDashboard({
           </ActionButton>
           <ActionButton
             tone="secondary"
-            onClick={() => setConfirmation(null)}
+            onClick={closeConfirmation}
             disabled={isPending}
           >
             Cancel

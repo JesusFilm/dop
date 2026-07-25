@@ -10,6 +10,6 @@ export default async function HomePage() {
   const token = (await cookies()).get(PARTICIPANT_COOKIE)?.value;
   const snapshot = await getParticipantSnapshot(
     token ? hashSessionToken(token) : undefined,
-  );
+  ).catch(() => ({ state: "JOIN", revision: 0 }) as const);
   return <ParticipantExperience initialSnapshot={snapshot} />;
 }

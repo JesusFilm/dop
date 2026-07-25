@@ -3,6 +3,7 @@ import { getDatabase } from "@/lib/db";
 import {
   assignParticipantsToRooms,
   chooseCoordinator,
+  pickSmallestEligibleRoom,
 } from "@/lib/gathering/assignment";
 import { ACTIVE_GATHERING_ID, INPUT_LIMITS } from "@/lib/gathering/constants";
 import { GatheringError } from "@/lib/gathering/errors";
@@ -238,18 +239,12 @@ export async function joinParticipant(input: {
         include: { _count: { select: { participants: true } } },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
-      const eligible = rooms.filter(
-        (room) =>
-          room.maxCapacity === null ||
-          room._count.participants < room.maxCapacity,
+      const room = pickSmallestEligibleRoom(
+        rooms.map((room) => ({
+          ...room,
+          participantCount: room._count.participants,
+        })),
       );
-      const smallest = Math.min(
-        ...eligible.map((room) => room._count.participants),
-      );
-      const candidates = eligible.filter(
-        (room) => room._count.participants === smallest,
-      );
-      const room = candidates[Math.floor(Math.random() * candidates.length)];
 
       if (!room) {
         throw new GatheringError(
