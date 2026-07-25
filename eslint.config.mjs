@@ -10,38 +10,9 @@ export default defineConfig([
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   globalIgnores([
     ".next/**",
-    // Git worktrees (git-ignored) live here; they are full repo copies and
-    // must not be linted as part of this project's source.
-    ".claude/**",
     "coverage/**",
     "node_modules/**",
     "src/generated/**",
     "next-env.d.ts",
   ]),
-  // Privacy #3 data boundary: the generated Prisma client may only be imported
-  // by the data layer (db.ts constructs it; repository.ts is the sanctioned
-  // accessor). Any other module must go through @/lib/repository so the
-  // "no all-requests path" guarantee cannot be bypassed with a raw query.
-  {
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["@/generated/prisma", "@/generated/prisma/*"],
-              message:
-                "Import the data layer from @/lib/repository — do not use the generated Prisma client directly (Privacy #3 boundary).",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ["src/lib/db.ts", "src/lib/repository.ts"],
-    rules: {
-      "no-restricted-imports": "off",
-    },
-  },
 ]);

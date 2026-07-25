@@ -21,10 +21,6 @@ Use these terms exactly in code, tests, and issues — don't drift to synonyms.
   the pairing is computed and locked. Never recomputed.
 - **Recovery code** — short per-Submission credential to restore the return
   view on any device.
-- **Purge** (`purgeAfter`) — the next-morning instant the session's Submissions
-  (and their Groups) are deleted. The Session row itself stays, so the
-  setup-page count reading **0** is the purge-verification view. The scheduler
-  is only a trigger; the app clock decides what is due.
 - **Setup path** — unguessable, no-auth, create-once organizer page that also
   produces the QR and takes the date/open/reveal time inputs.
 

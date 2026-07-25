@@ -13,14 +13,6 @@ Issues and PRDs live as **GitHub issues** in `JesusFilm/dop`, managed via the `g
 Read `CONTEXT.md` and the relevant ADRs before changing application behavior.
 Preserve their terminology and surface conflicts instead of silently overriding decisions.
 
-`CONCEPTS.md` at the repo root holds the shared domain vocabulary (entities, named
-processes, status concepts) — relevant when orienting to the codebase or discussing
-domain concepts.
-
-`docs/solutions/` holds documented solutions to past problems (bugs, best practices,
-workflow patterns), organized by category with YAML frontmatter (`module`, `tags`,
-`problem_type`) — relevant when implementing or debugging in documented areas.
-
 ### Compound Engineering
 
 Use the Compound Engineering plugin from Evry Incorporated for substantive engineering work:
@@ -47,9 +39,6 @@ Do not vendor plugin source or generated plugin state.
 - Run `pnpm verify` before delivery.
 - Run `pnpm db:check` against PostgreSQL when persistence configuration changes.
 - Keep secrets out of version control and update `.env.example` when environment requirements change.
-- Keep Railway deployment behavior in the repo's `railway*.toml` config files —
-  `railway.toml` for the web app service, and one file per additional Railway
-  service (config-as-code is per service, so e.g. the auto-purge cron service
-  points its config path at `railway.purge.toml`).
+- Keep Railway deployment behavior in `railway.toml`.
 - Treat `main` as the production source branch and deliver changes through reviewed pull requests.
 - Do not write execution progress into `docs/plans/`.
