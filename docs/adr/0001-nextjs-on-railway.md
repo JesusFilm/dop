@@ -53,6 +53,7 @@ deferred to ticket #2** (Data model + migrations).
   domain. The single-service reasoning still stands for the web app itself —
   what changed is that scheduled work gets its own service rather than a route.
   Railway config-as-code is per service, so each such service adds a
-  `railway*.toml` (see `AGENTS.md`). If the reveal backstop
-  ([#23](https://github.com/JesusFilm/dop/issues/23)) lands as a second cron
-  service, replace this amendment with an ADR on how scheduled work runs.
+  `railway*.toml` (see `AGENTS.md`). If the reveal triggers ticket
+  ([#22](https://github.com/JesusFilm/dop/issues/22)) lands its cron backstop as
+  a second cron service, replace this amendment with an ADR on how scheduled work
+  runs.

@@ -145,12 +145,26 @@ Check the setup page first: a count above 0 the morning after the event means
 the purge has not run. Then, in order of preference:
 
 1. **Run the job by hand** (preferred — same code path, same safety checks).
-   Locally with the Railway database URL, or from Railway's shell on either
-   service:
+
+   From **Railway's shell** on either service, where `DATABASE_URL` is already
+   set:
 
    ```bash
    pnpm purge
    ```
+
+   **From your laptop, pass the Railway URL inline** — do not put it in `.env`:
+
+   ```bash
+   DATABASE_URL='<the Railway Postgres URL>' PGSSLMODE=require pnpm purge
+   ```
+
+   An inline (or exported) value always wins over `.env`. This matters: your
+   `.env` points at your **local** Postgres, and a bare `pnpm purge` would run
+   there, find nothing due, and print a clean-looking result while the event's
+   requests are untouched. Every log line names the database it acted on
+   (`host:port/database`) — read it and confirm it is the event's database, not
+   `localhost`.
 
 2. **Manual DB delete** (fallback when the app or its tooling is unavailable).
    Railway → **Postgres service → Data / Query**, or `psql "$DATABASE_URL"`:
