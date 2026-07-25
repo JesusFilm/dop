@@ -29,7 +29,7 @@ execution: code
 ### Summary
 
 Create one live Day of Prayer gathering where participants join by name, receive a hidden deterministic room assignment immediately, wait together, and see that assignment when the organizer launches the reveal.
-Each room has a randomly selected coordinator at reveal, while the organizer can monitor live provisional rosters and reset the gathering for another run.
+The first participant assigned to each room becomes its coordinator, while the organizer can monitor live provisional rosters and reset the gathering for another run.
 
 ### Problem Frame
 
@@ -47,7 +47,7 @@ The Stitch output establishes the visual direction, but the application now need
 - **Seed each room with two participants before ordinary round robin.** (session-settled: user-directed — chosen over one-at-a-time balancing from the start: viable two-person groups should form before the algorithm advances.) Governs R10, R13.
 - **Keep seeded rooms immutable in the application.** (session-settled: user-directed — chosen over organizer room creation, editing, and deletion: room configuration is controlled outside the event-day interface.) Governs R9, R10, R11, R19, R25.
 - **Use launch only to reveal and finalize hidden assignments.** (session-settled: user-directed — chosen over assigning the waiting roster at launch: the organizer should see assignments as participants arrive while participants wait for a shared reveal.) Governs R6, R11, R14, R15, R18.
-- **Select one coordinator randomly per room.** (session-settled: user-directed — chosen over a preassigned facilitator or informal volunteer: the application should distribute responsibility.) Governs R14.
+- **Make the first participant assigned to a room its coordinator.** (session-settled: user-directed — chosen over random selection at reveal: coordinator responsibility should follow join order.) Governs R14.
 - **Allow immediate coordinator takeover.** (session-settled: user-directed — chosen over coordinator approval or group confirmation: an unavailable coordinator must not block the room.) Governs R20, R21.
 - **Collect personal prayer requests before the room experience exists.** (session-settled: user-directed — chosen over deferring collection: requests should be retained privately for the later experience.) Governs R2, R3, R18, R25.
 - **Reset the gathering without rebuilding room setup.** (session-settled: user-directed — chosen over a single-use gathering: the team expects to run load tests and reuse the configured rooms.) Governs R24, R25, R26.
@@ -73,7 +73,7 @@ The following breakdown is the current understanding, not a committed roadmap:
 ### Actors
 
 - A1. **Participant:** Joins from a personal device, waits for the assignment reveal, travels to the assigned room, and may take over as coordinator.
-- A2. **Room coordinator:** A participant selected at random whose current identity is shared with every member of the room.
+- A2. **Room coordinator:** The first participant assigned to a room, whose current identity is shared with every member after reveal.
 - A3. **Organizer:** Monitors arrivals and provisional rosters, launches the shared reveal, reviews coordinators, and resets the gathering.
 
 ### Requirements
@@ -102,7 +102,7 @@ The following breakdown is the current understanding, not a committed roadmap:
 
 - R12. Joining is blocked with a configuration error only when the seeded room invariant is broken; a valid configuration can always accept another participant because at least one room is unlimited.
 - R13. Assignment follows participant join order and seeded room order: place two participants into a room before advancing to the next room, then continue one participant per eligible room in round-robin order, dropping each finite room once it reaches capacity.
-- R14. At reveal, each non-empty room receives one coordinator chosen randomly from its already assigned participants.
+- R14. The first participant assigned to each non-empty room becomes its coordinator; the identity remains hidden until reveal.
 - R15. Launch reveals hidden assignments and makes every existing participant's room final without recalculating the waiting roster.
 - R16. A participant who joins after launch is assigned automatically to the first configured room among the currently smallest eligible rooms. Existing coordinators are preserved; if the selected room is empty, the late participant becomes its coordinator.
 
@@ -138,7 +138,7 @@ flowchart TB
   Organizer --> Launch{"Launch reveal"}
   Lobby --> Launch
   Lobby -.-> Reset
-  Launch --> Coordinator["Random coordinator selected per non-empty room"]
+  Launch --> Coordinator["First assigned participant revealed as coordinator"]
   Coordinator --> Handoff["Everyone sees room, members, and coordinator"]
   Late["Participant joins after reveal"] --> Eligible["First configured smallest eligible room"]
   Eligible --> Handoff
@@ -161,7 +161,7 @@ flowchart TB
   - **Trigger:** The organizer opens `/admin` while participants are joining.
   - **Actors:** A3
   - **Steps:** The organizer reviews read-only room configuration and live provisional rosters, then confirms reveal.
-  - **Outcome:** Existing room membership is revealed unchanged and every non-empty room receives one coordinator.
+  - **Outcome:** Existing room membership is revealed unchanged with the first assigned participant as each non-empty room's coordinator.
   - **Covers:** R9, R10, R11, R12, R13, R14, R15, R17.
 
 - F3. Participant receives the room handoff
@@ -206,7 +206,7 @@ flowchart TB
   - **When:** Thirty-seven participants join in sequence.
   - **Then:** Every participant immediately receives exactly one hidden room, the organizer sees sizes seven, six, six, six, six, and six in configured order, and participants remain in the lobby until reveal.
   - **When:** The organizer launches the reveal.
-  - **Then:** Membership remains unchanged, participants see their rooms, and every non-empty room receives exactly one coordinator.
+  - **Then:** Membership remains unchanged, participants see their rooms, and each room’s first assigned participant is revealed as its coordinator.
 
 - AE3. A finite room falls out of round robin
   - **Covers:** R10, R13.
@@ -222,7 +222,7 @@ flowchart TB
 
 - AE5. Coordinator does not arrive
   - **Covers:** R20, R21.
-  - **Given:** The randomly selected coordinator is unavailable.
+  - **Given:** The first participant assigned as coordinator is unavailable.
   - **When:** Another member confirms coordinator takeover.
   - **Then:** That member becomes coordinator and every room member sees the updated name.
 
@@ -412,7 +412,7 @@ stateDiagram-v2
 
 1. Replace randomized batch balancing with a pure deterministic next-room selector that fills the first configured room below two, then chooses the first smallest eligible room and ignores rooms at capacity.
 2. Assign every participant inside the serialized join transaction, recording the room immediately without exposing it through the participant projection while forming.
-3. Make launch choose coordinators and reveal existing memberships without recalculating them; make late arrivals use the same deterministic smallest-eligible ordering and preserve existing coordinators.
+3. Make the first participant assigned to each room its coordinator, keep that identity hidden until launch reveals existing memberships, and make late arrivals use the same deterministic smallest-eligible ordering while preserving existing coordinators.
 4. Remove room mutation operations from the event-day domain service.
 
 **Execution note:** Start with failing domain tests for AE2, AE3, AE4, AE5, and AE7, then add PostgreSQL-backed concurrency coverage.
@@ -426,7 +426,7 @@ stateDiagram-v2
 3. Covers AE3. Twelve joins with capacities two, unlimited, and unlimited produce room sizes two, five, and five, and the finite room receives no participant after reaching two.
 4. A join against missing rooms, a finite capacity below two, or a configuration without an unlimited room returns a configuration error without creating an unassigned participant.
 5. Two concurrent joins serialize into distinct deterministic assignment slots.
-6. Two concurrent reveal attempts choose one committed coordinator set without moving any participant.
+6. Two concurrent reveal attempts preserve one committed first-participant coordinator set without moving any participant.
 7. Covers AE4. Concurrent late joins each receive the first configured room among the smallest eligible rooms without moving existing members or replacing a coordinator; a late join entering an empty room becomes its coordinator.
 8. Covers AE5. A member of the room can become its sole coordinator, while a participant from another room is rejected.
 9. Covers AE7. Reset clears run data and returns the gathering to forming while preserving seeded room configuration.

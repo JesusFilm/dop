@@ -74,7 +74,7 @@ function RoomCard({
           <strong className="text-ink">
             {revealed
               ? (room.coordinatorName ?? "Not assigned")
-              : "Selected at reveal"}
+              : "Shown at reveal"}
           </strong>
         </p>
         <ul className="mt-3 flex flex-wrap gap-2">
@@ -84,7 +84,7 @@ function RoomCard({
               className="rounded-full bg-white px-3 py-2 text-sm text-ink"
             >
               {member.name}
-              {member.isCoordinator ? " · coordinator" : ""}
+              {revealed && member.isCoordinator ? " · coordinator" : ""}
             </li>
           ))}
         </ul>
