@@ -2,8 +2,10 @@
 
 A single live, in-person Day of Prayer gathering for roughly 30–50 people.
 Participants join from one shared link, wait in a lobby, and receive a physical
-room assignment when the organizer launches. The experience in this release
-ends once everyone knows their room, group, and coordinator.
+room assignment immediately. The organizer sees provisional room rosters while
+participants remain in the lobby; launch reveals those assignments. The
+experience in this release ends once everyone knows their room, group, and
+coordinator.
 
 The product contract is
 [`docs/plans/2026-07-25-001-feat-participant-room-handoff-plan.md`](docs/plans/2026-07-25-001-feat-participant-room-handoff-plan.md).
@@ -17,13 +19,13 @@ Use these terms in code, tests, issues, and product copy.
   `ASSIGNED` and can be reset for another run.
 - **Participant** — a person who joins with a display name and optional personal
   prayer request. Their browser is remembered by an opaque cookie.
-- **Room** — a configured physical space with a name, wayfinding directions, and
-  optional maximum capacity. A non-empty configuration always includes an
-  unlimited room.
+- **Room** — a seeded, application-read-only physical space with a name,
+  wayfinding directions, and optional maximum capacity. A finite maximum is at
+  least two, and the configuration always includes an unlimited room.
 - **Coordinator** — one participant selected randomly in each non-empty room.
   Any member can confirm an immediate takeover.
-- **Launch** — the final transition that balances waiting participants across
-  rooms and selects coordinators. Room setup is locked afterward.
+- **Launch** — the final transition that reveals existing assignments and
+  selects coordinators. It does not recalculate room membership.
 - **Reset** — clears participants, requests, assignments, coordinators, and
   launch state while preserving room configuration.
 - **Room handoff** — the participant screen showing the room, directions,

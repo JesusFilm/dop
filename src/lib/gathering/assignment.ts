@@ -3,89 +3,58 @@ export interface AssignableRoom {
   maxCapacity: number | null;
 }
 
-export function pickSmallestEligibleRoom<
-  T extends AssignableRoom & { participantCount: number },
->(rooms: readonly T[], random: () => number = Math.random): T | null {
-  const eligible = rooms.filter(
-    (room) =>
-      room.maxCapacity === null || room.participantCount < room.maxCapacity,
-  );
-  if (eligible.length === 0) return null;
+type CountedRoom = AssignableRoom & { participantCount: number };
 
-  const smallestCount = Math.min(
-    ...eligible.map(({ participantCount }) => participantCount),
-  );
-  const candidates = eligible.filter(
-    ({ participantCount }) => participantCount === smallestCount,
-  );
-  return (
-    candidates[Math.floor(random() * candidates.length)] ??
-    candidates[0] ??
-    null
-  );
+function canAcceptParticipant(room: CountedRoom): boolean {
+  return room.maxCapacity === null || room.participantCount < room.maxCapacity;
 }
 
-function shuffled<T>(values: readonly T[], random: () => number): T[] {
-  const result = [...values];
-
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+function firstSmallestRoom<T extends CountedRoom>(
+  rooms: readonly T[],
+): T | null {
+  let smallest: T | null = null;
+  for (const room of rooms) {
+    if (
+      canAcceptParticipant(room) &&
+      (smallest === null || room.participantCount < smallest.participantCount)
+    ) {
+      smallest = room;
+    }
   }
-
-  return result;
+  return smallest;
 }
 
-export function assignParticipantsToRooms(
-  participantIds: readonly string[],
+export function validateRoomConfiguration(
   rooms: readonly AssignableRoom[],
-  random: () => number = Math.random,
-): Map<string, string[]> {
+): void {
   if (rooms.length === 0) {
     throw new Error("At least one room is required for assignment.");
   }
-
-  const totalCapacity = rooms.reduce<number | null>((capacity, room) => {
-    if (capacity === null || room.maxCapacity === null) {
-      return null;
-    }
-
-    return capacity + room.maxCapacity;
-  }, 0);
-
-  if (totalCapacity !== null && totalCapacity < participantIds.length) {
-    throw new Error("The configured rooms do not have enough capacity.");
+  if (
+    rooms.some(({ maxCapacity }) => maxCapacity !== null && maxCapacity < 2)
+  ) {
+    throw new Error("Finite room capacity must be at least two.");
   }
-
-  const assignments = new Map(rooms.map((room) => [room.id, [] as string[]]));
-
-  for (const participantId of shuffled(participantIds, random)) {
-    const eligibleRooms = rooms.filter((room) => {
-      const members = assignments.get(room.id);
-      return (
-        members !== undefined &&
-        (room.maxCapacity === null || members.length < room.maxCapacity)
-      );
-    });
-
-    const smallestRoomSize = Math.min(
-      ...eligibleRooms.map((room) => assignments.get(room.id)?.length ?? 0),
-    );
-    const smallestRooms = eligibleRooms.filter(
-      (room) => assignments.get(room.id)?.length === smallestRoomSize,
-    );
-    const room =
-      smallestRooms[Math.floor(random() * smallestRooms.length)] ??
-      smallestRooms[0];
-
-    if (!room) {
-      throw new Error("The configured rooms do not have enough capacity.");
-    }
-
-    assignments.get(room.id)?.push(participantId);
+  if (!rooms.some(({ maxCapacity }) => maxCapacity === null)) {
+    throw new Error("At least one room must have unlimited capacity.");
   }
+}
 
-  return assignments;
+export function pickNextRoom<T extends CountedRoom>(
+  rooms: readonly T[],
+): T | null {
+  const roomNeedingPair = rooms.find(
+    (room) => canAcceptParticipant(room) && room.participantCount < 2,
+  );
+  if (roomNeedingPair) return roomNeedingPair;
+
+  return firstSmallestRoom(rooms);
+}
+
+export function pickSmallestEligibleRoom<T extends CountedRoom>(
+  rooms: readonly T[],
+): T | null {
+  return firstSmallestRoom(rooms);
 }
 
 export function chooseCoordinator(

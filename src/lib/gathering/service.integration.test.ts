@@ -2,15 +2,12 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { disconnectDatabase, getDatabase } from "@/lib/db";
 import { ACTIVE_GATHERING_ID } from "@/lib/gathering/constants";
 import {
-  addRoom,
   getOrganizerSnapshot,
   getParticipantSnapshot,
   joinParticipant,
   launchGathering,
-  removeRoom,
   resetGathering,
   takeOverCoordinator,
-  updateRoom,
 } from "@/lib/gathering/service";
 
 async function clearGathering() {
@@ -30,6 +27,28 @@ async function clearGathering() {
   });
 }
 
+async function seedRooms(
+  rooms: {
+    name: string;
+    directions?: string;
+    maxCapacity: number | null;
+  }[],
+) {
+  await getOrganizerSnapshot();
+  const database = getDatabase();
+  for (const [index, room] of rooms.entries()) {
+    await database.room.create({
+      data: {
+        gatheringId: ACTIVE_GATHERING_ID,
+        name: room.name,
+        directions: room.directions ?? "",
+        maxCapacity: room.maxCapacity,
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
+      },
+    });
+  }
+}
+
 describe("gathering lifecycle", () => {
   beforeEach(clearGathering);
   afterAll(async () => {
@@ -37,27 +56,40 @@ describe("gathering lifecycle", () => {
     await disconnectDatabase();
   });
 
-  it("joins, launches, takes over, accepts a late arrival, and resets", async () => {
-    await addRoom({
-      name: "Olive Grove",
-      directions: "Level 2",
-      maxCapacity: null,
-    });
-    await addRoom({
-      name: "Upper Room",
-      directions: "Beside reception",
-      maxCapacity: 3,
-    });
+  it("enforces the minimum finite room capacity in PostgreSQL", async () => {
+    await getOrganizerSnapshot();
+    await expect(
+      getDatabase().room.create({
+        data: {
+          gatheringId: ACTIVE_GATHERING_ID,
+          name: "Single Seat",
+          maxCapacity: 1,
+        },
+      }),
+    ).rejects.toThrow();
+  });
 
-    await Promise.all(
-      Array.from({ length: 5 }, (_, index) =>
-        joinParticipant({
-          displayName: `Participant ${index + 1}`,
-          prayerRequest: `Private request ${index + 1}`,
-          sessionTokenHash: String(index + 1).padStart(64, "0"),
-        }),
-      ),
-    );
+  it("joins, launches, takes over, accepts a late arrival, and resets", async () => {
+    await seedRooms([
+      {
+        name: "Olive Grove",
+        directions: "Level 2",
+        maxCapacity: null,
+      },
+      {
+        name: "Upper Room",
+        directions: "Beside reception",
+        maxCapacity: 3,
+      },
+    ]);
+
+    for (let index = 0; index < 5; index += 1) {
+      await joinParticipant({
+        displayName: `Participant ${index + 1}`,
+        prayerRequest: `Private request ${index + 1}`,
+        sessionTokenHash: String(index + 1).padStart(64, "0"),
+      });
+    }
 
     const beforeLaunch = await getOrganizerSnapshot();
     expect(beforeLaunch).toMatchObject({
@@ -65,14 +97,26 @@ describe("gathering lifecycle", () => {
       participantCount: 5,
       capacitySufficient: true,
     });
+    expect(beforeLaunch.rooms.map(({ memberCount }) => memberCount)).toEqual([
+      3, 2,
+    ]);
     expect(JSON.stringify(beforeLaunch)).not.toContain("Private request");
+    expect(await getParticipantSnapshot("1".padStart(64, "0"))).toMatchObject({
+      state: "LOBBY",
+    });
+    await expect(
+      takeOverCoordinator("1".padStart(64, "0")),
+    ).rejects.toMatchObject({ code: "NOT_REVEALED" });
+    const provisionalMembership = beforeLaunch.rooms.map((room) =>
+      room.members.map(({ id }) => id),
+    );
 
     await launchGathering();
     const assigned = await getOrganizerSnapshot();
     expect(assigned.phase).toBe("ASSIGNED");
-    expect(assigned.rooms.map(({ memberCount }) => memberCount).sort()).toEqual(
-      [2, 3],
-    );
+    expect(
+      assigned.rooms.map((room) => room.members.map(({ id }) => id)),
+    ).toEqual(provisionalMembership);
     expect(
       assigned.rooms.every(
         (room) => room.memberCount === 0 || room.coordinatorName !== null,
@@ -110,10 +154,22 @@ describe("gathering lifecycle", () => {
   });
 
   it("makes the first late arrival coordinator of an empty room", async () => {
-    await addRoom({
-      name: "Olive Grove",
-      directions: "Level 2",
-      maxCapacity: null,
+    await seedRooms([
+      {
+        name: "Olive Grove",
+        directions: "Level 2",
+        maxCapacity: null,
+      },
+      {
+        name: "Upper Room",
+        directions: "Beside reception",
+        maxCapacity: null,
+      },
+    ]);
+    await joinParticipant({
+      displayName: "Initial Participant",
+      prayerRequest: "",
+      sessionTokenHash: "initial".padStart(64, "0"),
     });
     await launchGathering();
     await joinParticipant({
@@ -126,6 +182,7 @@ describe("gathering lifecycle", () => {
       "late-coordinator".padStart(64, "0"),
     );
     expect(snapshot.state).toBe("ROOM");
+    expect(snapshot.state === "ROOM" && snapshot.room.name).toBe("Upper Room");
     expect(
       snapshot.state === "ROOM" &&
         snapshot.room.members.find(({ id }) => id === snapshot.participant.id)
@@ -133,12 +190,11 @@ describe("gathering lifecycle", () => {
     ).toBe(true);
   });
 
-  it("keeps launch atomic and locks room configuration", async () => {
-    await addRoom({
-      name: "Unlimited Room",
-      directions: "",
-      maxCapacity: null,
-    });
+  it("keeps reveal atomic without recalculating room membership", async () => {
+    await seedRooms([
+      { name: "First Unlimited Room", maxCapacity: null },
+      { name: "Second Unlimited Room", maxCapacity: null },
+    ]);
     await Promise.all(
       Array.from({ length: 12 }, (_, index) =>
         joinParticipant({
@@ -165,57 +221,22 @@ describe("gathering lifecycle", () => {
       phase: "ASSIGNED",
       participantCount: 12,
     });
-    expect(launched.rooms[0]?.memberCount).toBe(12);
-    await expect(
-      updateRoom({
-        id: launched.rooms[0]?.id ?? "",
-        name: "Renamed",
-        directions: "",
-        maxCapacity: null,
-      }),
-    ).rejects.toMatchObject({ code: "ROOMS_LOCKED" });
-  });
-
-  it("blocks launch with no rooms without partially assigning participants", async () => {
-    await joinParticipant({
-      displayName: "Waiting Participant",
-      prayerRequest: "",
-      sessionTokenHash: "waiting".padStart(64, "0"),
-    });
-
-    await expect(launchGathering()).rejects.toMatchObject({
-      code: "LAUNCH_BLOCKED",
-    });
-    expect(
-      await getParticipantSnapshot("waiting".padStart(64, "0")),
-    ).toMatchObject({ state: "LOBBY" });
-    expect(await getOrganizerSnapshot()).toMatchObject({ phase: "FORMING" });
-  });
-
-  it("preserves an unlimited room while allowing other rooms to be removed", async () => {
-    await addRoom({
-      name: "Unlimited Room",
-      directions: "",
-      maxCapacity: null,
-    });
-    await addRoom({
-      name: "Capped Room",
-      directions: "",
-      maxCapacity: 4,
-    });
-
-    const snapshot = await getOrganizerSnapshot();
-    const unlimited = snapshot.rooms.find(
-      ({ maxCapacity }) => maxCapacity === null,
-    );
-    const capped = snapshot.rooms.find(({ maxCapacity }) => maxCapacity === 4);
-    await expect(removeRoom(unlimited?.id ?? "")).rejects.toMatchObject({
-      code: "UNLIMITED_ROOM_REQUIRED",
-    });
-    await removeRoom(capped?.id ?? "");
-
-    expect((await getOrganizerSnapshot()).rooms).toMatchObject([
-      { name: "Unlimited Room", maxCapacity: null },
+    expect(launched.rooms.map(({ memberCount }) => memberCount)).toEqual([
+      6, 6,
     ]);
+  });
+
+  it("rejects a join when seeded room invariants are broken", async () => {
+    await expect(
+      joinParticipant({
+        displayName: "Waiting Participant",
+        prayerRequest: "",
+        sessionTokenHash: "waiting".padStart(64, "0"),
+      }),
+    ).rejects.toMatchObject({ code: "ROOM_CONFIGURATION_INVALID" });
+    expect(await getOrganizerSnapshot()).toMatchObject({
+      phase: "FORMING",
+      participantCount: 0,
+    });
   });
 });

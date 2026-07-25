@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  assertSameOrigin,
-  parseOptionalCapacity,
-  readJsonObject,
-} from "@/lib/gathering/http";
+import { assertSameOrigin, readJsonObject } from "@/lib/gathering/http";
 
 describe("gathering HTTP helpers", () => {
   it("accepts mutations from the request host", () => {
@@ -71,13 +67,5 @@ describe("gathering HTTP helpers", () => {
       ),
     ).rejects.toMatchObject({ code: "BODY_TOO_LARGE" });
     expect(cancelled).toBe(true);
-  });
-
-  it("parses only valid optional capacities", () => {
-    expect(parseOptionalCapacity(null)).toBeNull();
-    expect(parseOptionalCapacity(12)).toBe(12);
-    expect(() => parseOptionalCapacity(0)).toThrowError(
-      expect.objectContaining({ code: "INVALID_CAPACITY" }),
-    );
   });
 });

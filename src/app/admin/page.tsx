@@ -8,6 +8,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function OrganizerPage() {
+export default async function AdminPage() {
   return <OrganizerDashboard initialSnapshot={await getOrganizerSnapshot()} />;
 }
