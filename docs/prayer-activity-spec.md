@@ -1,4 +1,9 @@
-# Prayer Activity — QR prayer-request matcher
+# Prayer Activity — QR prayer-request matcher (superseded)
+
+> This historical specification was superseded by the room-handoff product
+> direction in
+> [`docs/plans/2026-07-25-001-feat-participant-room-handoff-plan.md`](plans/2026-07-25-001-feat-participant-room-handoff-plan.md).
+> It is retained for decision history only and is not implementation authority.
 
 **Locked spec + build-ready ticket plan.** Target event: **Monday 2026-07-27**.
 
