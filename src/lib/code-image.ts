@@ -18,8 +18,8 @@ export type CodeImageContext = Pick<
   "fillStyle" | "font" | "textAlign" | "textBaseline" | "fillRect" | "fillText"
 >;
 
-/** The characters `generateRecoveryCode` draws from (see `@/lib/tokens`). */
-const CODE_CHARACTERS = /[^A-Z0-9]/g;
+/** Everything that is *not* a recovery-code character (see `@/lib/tokens`). */
+const NON_CODE_CHARACTERS = /[^A-Z0-9]/g;
 
 /**
  * Paints the recovery code onto a 2D context as a self-contained card. The
@@ -66,7 +66,7 @@ export function drawRecoveryCodeImage(
  * so it is sanitized here rather than trusted.
  */
 export function recoveryCodeImageFileName(recoveryCode: string): string {
-  const safe = recoveryCode.toUpperCase().replace(CODE_CHARACTERS, "");
+  const safe = recoveryCode.toUpperCase().replace(NON_CODE_CHARACTERS, "");
   return `prayer-recovery-code-${safe}.png`;
 }
 

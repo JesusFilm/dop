@@ -11,6 +11,18 @@ import {
 import { CONFIRMATION_COPY } from "@/lib/confirmation";
 
 /**
+ * A stand-in PNG used only to ask `canShare` whether files are allowed at all.
+ * Non-empty on purpose: a 0-byte payload risks a false "unsupported" from an
+ * implementation that rejects empty files, which would hide the button on a
+ * browser that would happily share the real image.
+ */
+function shareProbeFile(): File {
+  return new File([new Uint8Array([137])], "probe.png", { type: "image/png" });
+}
+
+type Status = "idle" | "pending" | "error";
+
+/**
  * The §7.2 "Save code as image" affordance: renders the recovery code to a
  * canvas and hands the PNG to the platform share sheet (iOS "Save to Photos",
  * Android "Save to Files"), so someone who mistrusts screenshots still leaves
@@ -24,14 +36,6 @@ import { CONFIRMATION_COPY } from "@/lib/confirmation";
  * exactly as §7.2 intends. A failure mid-share degrades the same way: a short
  * message pointing back at the screenshot, never a dead end.
  */
-
-/** An empty PNG stand-in used only to ask `canShare` whether files are allowed. */
-function shareProbeFile(): File {
-  return new File([new Uint8Array()], "probe.png", { type: "image/png" });
-}
-
-type Status = "idle" | "pending" | "error";
-
 export function SaveCodeImage({ recoveryCode }: { recoveryCode: string }) {
   const [supported, setSupported] = useState(false);
   const [status, setStatus] = useState<Status>("idle");

@@ -19,8 +19,8 @@ const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const RECOVERY_LENGTH = 6;
 
 /**
- * A short, human-legible recovery code (#8) — the bearer credential shown once
- * at submit that restores the return view on any device. Drawn from an
+ * A short, human-legible recovery code (#8) — the bearer credential shown on
+ * the confirmation screen that restores the return view on any device. Drawn from an
  * unambiguous alphabet (no 0/O or 1/I) so it survives being read off a
  * screenshot — which is exactly how the confirmation screen (§7.2) tells people
  * to keep it.

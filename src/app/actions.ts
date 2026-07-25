@@ -38,8 +38,8 @@ const EDIT_LOCKED_MESSAGE =
 
 /**
  * Where a *new* submission lands: the confirmation screen that shows the
- * recovery code once (§7.2, #8). Already-submitted bounces still go to `/` —
- * that device's entry already exists and its owner has seen their code.
+ * recovery code (§7.2, #8). Already-submitted bounces still go to `/` — that
+ * device's entry already exists, and the return view links back here.
  */
 const CONFIRMATION_PATH = "/confirmed";
 
@@ -110,7 +110,7 @@ function targetMentions(error: unknown, field: string): boolean {
  * to the return view rather than creating a second, and the
  * `(sessionId, deviceToken)` unique index is the concurrency backstop.
  * Submissions hard-close at the reveal instant by app clock (§5/§6). A
- * `recoveryCode` is generated and persisted here (#8) and shown once on the
+ * `recoveryCode` is generated and persisted here (#8) and shown on the
  * confirmation screen this redirects to (§7.2).
  */
 export async function submitAction(
