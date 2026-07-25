@@ -11,7 +11,7 @@ applies_when:
   - "The connection target comes from ambient config (a dotenv file, an exported variable, a shell profile) that differs between a laptop and production"
   - "A runbook teaches an operator to read one specific line of output as proof the work happened"
   - "You are removing a crash or hard failure from a command whose failure mode is the operator's only signal"
-  - "A no-op is a legitimate outcome, so \"nothing to do\" and \"pointed at the wrong thing\" produce identical output"
+  - 'A no-op is a legitimate outcome, so "nothing to do" and "pointed at the wrong thing" produce identical output'
 root_cause: config_error
 resolution_type: code_fix
 tags:
@@ -56,20 +56,20 @@ Auto-purge: nothing due at 2026-07-28T18:00:00Z    (exit 0)
 That is the exact line the runbook teaches an operator to read as proof of
 deletion — `README.md:138-139` says to read the logs and that "with nothing due
 it logs `Auto-purge: nothing due at …`". Nothing in the output distinguished
-*the event's database is already clean* from *you just queried your laptop and
-the requests are still live*. A loud crash had become a confident false report,
+_the event's database is already clean_ from _you just queried your laptop and
+the requests are still live_. A loud crash had become a confident false report,
 in the fallback path for a privacy-critical delete.
 
 Approaches considered and rejected along the way:
 
 - **Leave the crash in place.** Not viable: the runbook documents this as the
   preferred recovery path and it could not run. (`scripts/check-database.ts` had
-  the identical latent gap, and only appeared to work because the `prisma
-  generate` step ahead of it loads dotenv in a separate process.)
+  the identical latent gap, and only appeared to work because the
+  `prisma generate` step ahead of it loads dotenv in a separate process.)
 - **Tell the operator to put the production URL in `.env`.** Asks someone under
   time pressure to edit a file the repo says points at localhost, and leaves a
   production credential on a laptop.
-- **Add an "are you sure?" prompt.** Confirms nothing. The operator *is* sure;
+- **Add an "are you sure?" prompt.** Confirms nothing. The operator _is_ sure;
   they are pointed at the wrong database. Confirmation without naming the target
   just adds a keystroke.
 
@@ -91,9 +91,9 @@ Four concrete practices, as applied here:
    identical, so the "nothing happened" line is the dangerous one. All three
    branches carry the target (`scripts/purge-submissions.ts:34-51`).
 2. **Give the "nothing happened" line the operator's next check.** Not just
-   `nothing due`, but `… If you expected a purge, check that ${target} is the
-   event's database.` (`scripts/purge-submissions.ts:36`). An assertion plus how
-   to falsify it.
+   `nothing due`, but a pointer to what to verify —
+   `If you expected a purge, check that ${target} is the event's database.`
+   (`scripts/purge-submissions.ts:36`). An assertion plus how to falsify it.
 3. **Render the identifier with a pure function that strips credentials and
    never throws** (`src/lib/db.ts:43-59`). Logging a raw connection string leaks
    a password; letting the describer throw reintroduces a crash in the name of
@@ -127,7 +127,7 @@ did. The reasoning is recorded at the call site
 
 **Cost of missing it.** In the multi-agent code review of this branch, three
 lenses (security, adversarial, correctness) each flagged this independently and
-a separate validator reproduced it by running the command — but only *after* the
+a separate validator reproduced it by running the command — but only _after_ the
 quieter version had already shipped to the branch, passing a green test suite and
 CI. (That review ran in-session; it is not recorded as GitHub review comments on
 the PR.) Tests do not catch a signal that is technically correct and practically
@@ -249,8 +249,8 @@ DATABASE_URL='<the Railway Postgres URL>' PGSSLMODE=require pnpm purge
   that one is about clock trust, this one about operator signal; they should not
   be conflated. (That doc is already on `main`; this link resolves once the
   branch carrying this file merges.)
-- `CONCEPTS.md` — *Purge* and *App-clock authority*. This learning sharpens the
-  *Purge* entry's verification claim: a zero reading verifies deletion only when
+- `CONCEPTS.md` — _Purge_ and _App-clock authority_. This learning sharpens the
+  _Purge_ entry's verification claim: a zero reading verifies deletion only when
   the signal names what it inspected.
 - `README.md` — the "Auto-purge" runbook, both the artifact that was wrong and
   the repaired surface.
