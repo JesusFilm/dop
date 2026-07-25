@@ -283,9 +283,48 @@ describe("submitAction", () => {
     expect(result.error).toMatch(/went wrong/i);
     expect(redirect).not.toHaveBeenCalled();
   });
+
+  it("reuses the device's existing cookie token when it has no entry yet (prior attempt)", async () => {
+    // Cookie present but no persisted submission for it (a prior attempt that
+    // set the cookie but never wrote): the same token is reused, not re-minted.
+    const cookieJar = fakeCookies({
+      name: DEVICE_TOKEN_COOKIE,
+      value: "device-abc",
+    });
+    vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue(null);
+    vi.mocked(createSubmission).mockResolvedValue({ id: "sub_1" } as never);
+
+    await expect(
+      submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
+    ).rejects.toThrow("REDIRECT:/");
+
+    const createArg = vi.mocked(createSubmission).mock.calls[0][1];
+    expect(createArg.deviceToken).toBe("device-abc");
+    expect(cookieJar.setCalls).toHaveLength(1);
+    expect(cookieJar.setCalls[0].value).toBe("device-abc");
+    expect(redirect).toHaveBeenCalledWith("/");
+  });
 });
 
 describe("editAction", () => {
+  it("returns the organizer message when no session exists yet", async () => {
+    vi.mocked(cookies).mockResolvedValue(
+      fakeCookies({ name: DEVICE_TOKEN_COOKIE, value: "device-abc" })
+        .store as never,
+    );
+    vi.mocked(findCurrentSession).mockResolvedValue(null);
+
+    const result = await editAction(INITIAL_SUBMIT_STATE, VALID_FORM);
+
+    expect(result.error).toMatch(/organizer/i);
+    expect(updateSubmission).not.toHaveBeenCalled();
+  });
+
   it("errors when the device has no entry to edit", async () => {
     vi.mocked(cookies).mockResolvedValue(fakeCookies().store as never);
     vi.mocked(findCurrentSession).mockResolvedValue({
@@ -297,6 +336,57 @@ describe("editAction", () => {
 
     expect(result.error).toMatch(/couldn't find/i);
     expect(updateSubmission).not.toHaveBeenCalled();
+  });
+
+  it("reports per-field errors and does not update when fields are blank (#13)", async () => {
+    vi.mocked(cookies).mockResolvedValue(
+      fakeCookies({ name: DEVICE_TOKEN_COOKIE, value: "device-abc" })
+        .store as never,
+    );
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue({
+      id: "sub_1",
+    } as never);
+
+    const result = await editAction(
+      INITIAL_SUBMIT_STATE,
+      formOf({ firstName: "", lastName: "", request: "" }),
+    );
+
+    expect(result.error).toBeNull();
+    expect(result.fieldErrors).toMatchObject({
+      firstName: expect.any(String),
+      lastName: expect.any(String),
+      request: expect.any(String),
+    });
+    expect(updateSubmission).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("returns a not-found message (not a raw error) when the entry is purged before the update (P2025)", async () => {
+    vi.mocked(cookies).mockResolvedValue(
+      fakeCookies({ name: DEVICE_TOKEN_COOKIE, value: "device-abc" })
+        .store as never,
+    );
+    vi.mocked(findCurrentSession).mockResolvedValue({
+      id: "sess_1",
+      revealAt: FUTURE_REVEAL,
+    } as never);
+    vi.mocked(findSubmissionByDeviceToken).mockResolvedValue({
+      id: "sub_1",
+    } as never);
+    vi.mocked(updateSubmission).mockRejectedValue({ code: "P2025" });
+
+    const result: SubmitFormState = await editAction(
+      INITIAL_SUBMIT_STATE,
+      VALID_FORM,
+    );
+
+    expect(result.error).toMatch(/couldn't find/i);
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("refuses edits after the reveal instant (locked, §6)", async () => {

@@ -143,6 +143,19 @@ describe("validateSubmissionForm", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("rejects a File value (FormData.get can return a File, never a name)", () => {
+    const result = validateSubmissionForm({
+      firstName: new File(["x"], "avatar.png"),
+      lastName: "Lovelace",
+      request: "A hope",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.firstName).toBeTruthy();
+    }
+  });
+
   it("accepts fields exactly at the length limits", () => {
     const result = validateSubmissionForm({
       firstName: "a".repeat(FIELD_MAX_LENGTHS.name),

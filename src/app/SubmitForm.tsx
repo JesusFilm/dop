@@ -47,9 +47,9 @@ const errorStyle: React.CSSProperties = {
   fontWeight: 400,
 };
 
-function FieldError({ message }: { message?: string }) {
+function FieldError({ id, message }: { id: string; message?: string }) {
   return message ? (
-    <span role="alert" style={errorStyle}>
+    <span id={id} role="alert" style={errorStyle}>
       {message}
     </span>
   ) : null;
@@ -107,9 +107,13 @@ export function SubmitForm({
             maxLength={FIELD_MAX_LENGTHS.name}
             autoComplete="given-name"
             defaultValue={defaults?.firstName ?? ""}
+            aria-invalid={fieldErrors.firstName ? true : undefined}
+            aria-describedby={
+              fieldErrors.firstName ? "firstName-error" : undefined
+            }
             style={inputStyle}
           />
-          <FieldError message={fieldErrors.firstName} />
+          <FieldError id="firstName-error" message={fieldErrors.firstName} />
         </label>
 
         <label style={{ ...fieldStyle, flex: 1 }}>
@@ -121,9 +125,13 @@ export function SubmitForm({
             maxLength={FIELD_MAX_LENGTHS.name}
             autoComplete="family-name"
             defaultValue={defaults?.lastName ?? ""}
+            aria-invalid={fieldErrors.lastName ? true : undefined}
+            aria-describedby={
+              fieldErrors.lastName ? "lastName-error" : undefined
+            }
             style={inputStyle}
           />
-          <FieldError message={fieldErrors.lastName} />
+          <FieldError id="lastName-error" message={fieldErrors.lastName} />
         </label>
       </div>
 
@@ -168,9 +176,11 @@ export function SubmitForm({
           placeholder={SUBMIT_COPY.requestPlaceholder}
           value={request}
           onChange={(event) => setRequest(event.target.value)}
+          aria-invalid={fieldErrors.request ? true : undefined}
+          aria-describedby={fieldErrors.request ? "request-error" : undefined}
           style={{ ...inputStyle, resize: "vertical" }}
         />
-        <FieldError message={fieldErrors.request} />
+        <FieldError id="request-error" message={fieldErrors.request} />
       </label>
 
       <p style={{ color: "#555", fontSize: "0.85rem", margin: 0 }}>

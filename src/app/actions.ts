@@ -32,6 +32,9 @@ const CLOSED_MESSAGE =
 const NOT_OPEN_MESSAGE = "This isn't open yet. Please check with an organizer.";
 const SAVE_ERROR_MESSAGE =
   "Something went wrong saving your request. Please try again.";
+const ENTRY_NOT_FOUND_MESSAGE = "We couldn't find your entry on this device.";
+const EDIT_LOCKED_MESSAGE =
+  "Your request is locked in now — the reveal time has passed.";
 
 /** Two days covers the open→reveal window and the next-morning return (§10). */
 const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
@@ -62,6 +65,16 @@ function isUniqueViolation(error: unknown): boolean {
     error !== null &&
     "code" in error &&
     (error as { code?: unknown }).code === "P2002"
+  );
+}
+
+/** Prisma raises P2025 when an update targets a row that no longer exists. */
+function isRecordNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2025"
   );
 }
 
@@ -211,7 +224,7 @@ export async function editAction(
   const cookieStore = await cookies();
   const deviceToken = cookieStore.get(DEVICE_TOKEN_COOKIE)?.value;
   if (!deviceToken) {
-    return { error: "We couldn't find your entry on this device." };
+    return { error: ENTRY_NOT_FOUND_MESSAGE };
   }
 
   const existing = await findSubmissionByDeviceToken(
@@ -220,13 +233,11 @@ export async function editAction(
     deviceToken,
   );
   if (!existing) {
-    return { error: "We couldn't find your entry on this device." };
+    return { error: ENTRY_NOT_FOUND_MESSAGE };
   }
 
   if (!isBeforeReveal(new Date(), session.revealAt)) {
-    return {
-      error: "Your request is locked in now — the reveal time has passed.",
-    };
+    return { error: EDIT_LOCKED_MESSAGE };
   }
 
   const validation = validateSubmissionForm({
@@ -238,12 +249,22 @@ export async function editAction(
     return { error: null, fieldErrors: validation.fieldErrors };
   }
 
-  await updateSubmission(db, {
-    id: existing.id,
-    firstName: validation.value.firstName,
-    lastName: validation.value.lastName,
-    request: validation.value.request,
-  });
+  try {
+    await updateSubmission(db, {
+      id: existing.id,
+      firstName: validation.value.firstName,
+      lastName: validation.value.lastName,
+      request: validation.value.request,
+    });
+  } catch (error) {
+    // The entry was purged between the owner-scoped read above and this update
+    // (P2025 — e.g. the next-morning purge racing a late edit): treat as
+    // no-entry rather than surfacing a raw database error (§6, §10).
+    if (isRecordNotFound(error)) {
+      return { error: ENTRY_NOT_FOUND_MESSAGE };
+    }
+    return { error: SAVE_ERROR_MESSAGE };
+  }
 
   redirect("/");
 }
