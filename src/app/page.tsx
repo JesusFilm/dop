@@ -1,18 +1,24 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { getDatabase } from "@/lib/db";
+import { RECOVERY_COPY } from "@/lib/recovery";
 import {
   findCurrentSession,
   findSubmissionByDeviceToken,
+  getGroupAssignment,
 } from "@/lib/repository";
 import { isRevealOpen, msUntilReveal } from "@/lib/reveal";
+import { partnersOf, RETURN_COPY, selectReturnState } from "@/lib/return-view";
 import { DEVICE_TOKEN_COOKIE, SUBMIT_COPY } from "@/lib/submit";
-import { formatZonedDateTime } from "@/lib/time";
+import { formatZonedDateTime, formatZonedTime } from "@/lib/time";
 
-import { Countdown } from "./Countdown";
-import { editAction, submitAction } from "./actions";
+import { AutoRefresh } from "./AutoRefresh";
+import { RecoveryPanel } from "./RecoveryPanel";
+import { PairedReturn, PreRevealReturn } from "./ReturnView";
+import { submitAction } from "./actions";
 import { SubmitForm } from "./SubmitForm";
 
 // Depends on the device cookie and live database state — never cache.
@@ -34,7 +40,7 @@ const noticeStyle: React.CSSProperties = {
   justifyContent: "center",
 };
 
-/** A centred single-message screen — the no-session, closed, and locked states. */
+/** A centred single-message screen — the no-session, pending, and lone states. */
 function Notice({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main style={noticeStyle}>
@@ -45,21 +51,28 @@ function Notice({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * The participant submit landing — where a scanned QR opens (§1, §7.1). Resolves
- * the single session and this device's entry, then shows one of:
+ * The participant landing — where a scanned QR opens (§1) and where someone
+ * returns to (§7.3). Resolves the single session and this device's entry, then
+ * shows one of:
  *
  * - **No session yet** — a gentle "not open" notice.
- * - **No entry, before reveal** — the warm submit screen (§7.1): starter chips,
- *   two required name fields (#13), request, consent line.
- * - **Own entry, before reveal** — the pre-reveal return view (§6): a live
- *   countdown to the reveal (§7.3, #20) plus the entry pre-filled with
- *   name/request editable.
- * - **After the reveal** — submissions are hard-closed (§5/§6); the full reveal
- *   view is gated on the app clock and lands in a later ticket (§7.3, step 9).
+ * - **No entry, before reveal** — the warm submit screen (§7.1), plus a link to
+ *   recovery-code entry for someone who submitted on another phone (§7.4).
+ * - **Own entry, before reveal** — the pre-reveal return view (§7.3): status
+ *   header with the submit time, live countdown (#20), numbered next steps, and
+ *   `Edit my request` (§6).
+ * - **Own entry, after reveal** — the paired return view (§7.3): partner full
+ *   name(s) (#13) and a request card each; a trio needs no special case. Before
+ *   the freeze lands (§4) a brief "in just a moment" notice; for the lone n=1
+ *   participant, the gentle small-n message.
+ * - **No entry, after reveal** — the graceful no-cookie/no-code message with
+ *   recovery-code entry inline (§7.3, §7.4), since submissions have hard-closed
+ *   (§6) and a new entry is no longer possible.
  *
  * The reveal boundary is decided by {@link isRevealOpen} against the app's own
  * clock (§5, #20) — never a scheduler trigger — so the gate is sharp regardless
- * of cron drift.
+ * of cron drift, and partner content is simply absent from the response before
+ * the reveal instant.
  */
 export default async function Home() {
   const db = getDatabase();
@@ -86,82 +99,112 @@ export default async function Home() {
   const revealOpen = isRevealOpen(now, session.revealAt);
   const revealLabel = formatZonedDateTime(session.revealAt, session.timeZone);
 
-  // Returning on the same phone (§6).
-  if (existing) {
-    if (revealOpen) {
-      // Reveal time has arrived. The partner view itself lands in #9; until then
-      // this is an accurate interim placeholder for someone who already has an
-      // entry — not a "come back later" message (the reveal is now, not later).
+  // The caller's partners, read only once the app clock has opened the reveal.
+  // `getGroupAssignment` is the only path to request content (Privacy #3) and
+  // returns this caller's own group or nothing; skipping the read before the
+  // reveal keeps partner data out of the pre-reveal request entirely.
+  const partners =
+    revealOpen && existing
+      ? partnersOf(
+          await getGroupAssignment(db, {
+            sessionId: session.id,
+            submissionId: existing.id,
+          }),
+        )
+      : [];
+
+  // Returning on the same phone, or on a device restored by a recovery code
+  // (§6, §7.4 — recovery adopts the entry's device token, so both land here).
+  // The `pre-reveal` state is only ever chosen when an entry exists, but that
+  // correlation is invisible to the type checker, so the view is built here
+  // where `existing` is narrowed and the switch below only places it.
+  const preRevealReturn = existing ? (
+    <PreRevealReturn
+      sharedLabel={formatZonedTime(existing.createdAt, session.timeZone)}
+      revealLabel={revealLabel}
+      remainingMs={msUntilReveal(now, session.revealAt)}
+      defaults={{
+        firstName: existing.firstName,
+        lastName: existing.lastName,
+        request: existing.request,
+      }}
+    />
+  ) : null;
+
+  switch (
+    selectReturnState({
+      hasEntry: existing !== null,
+      revealOpen,
+      pairingFrozen: session.pairingFrozenAt !== null,
+      partnerCount: partners.length,
+    })
+  ) {
+    case "pre-reveal":
+      return <main style={pageStyle}>{preRevealReturn}</main>;
+
+    case "paired":
       return (
-        <Notice title="It&rsquo;s reveal time">
-          Who you&rsquo;re praying for will appear here in just a moment.
+        <main style={pageStyle}>
+          <PairedReturn partners={partners} />
+        </main>
+      );
+
+    case "lone":
+      return (
+        <Notice title={RETURN_COPY.loneHeading}>{RETURN_COPY.loneBody}</Notice>
+      );
+
+    case "pending-freeze":
+      return (
+        <Notice title={RETURN_COPY.pendingHeading}>
+          {RETURN_COPY.pendingBody}
+          {/* Makes "this page will catch up on its own" true: keep asking the
+              server for a fresh render until the freeze lands and it serves the
+              partner view instead (which unmounts this). */}
+          <AutoRefresh />
         </Notice>
       );
-    }
 
-    return (
-      <main style={pageStyle}>
-        <header
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.75rem",
-            alignItems: "flex-start",
-          }}
-        >
-          <h1 style={{ fontSize: "1.5rem", margin: 0 }}>Your request is in</h1>
-          <Countdown
-            initialRemainingMs={msUntilReveal(now, session.revealAt)}
+    // No entry on this device, and submissions have hard-closed (§6): the only
+    // way forward is restoring an existing entry (§7.3, §7.4).
+    case "recover":
+      return (
+        <main style={pageStyle}>
+          <RecoveryPanel>
+            <p style={{ color: "#555", margin: 0, lineHeight: 1.5 }}>
+              Submissions closed at {revealLabel}, so a new request can&rsquo;t
+              be added now.
+            </p>
+          </RecoveryPanel>
+        </main>
+      );
+
+    // The warm submit screen (§7.1). Someone who already submitted on another
+    // phone gets a quiet route to recovery rather than a second entry (§7.4).
+    case "submit":
+      return (
+        <main style={pageStyle}>
+          <header
+            style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
+          >
+            <h1 style={{ fontSize: "1.6rem", margin: 0 }}>
+              {SUBMIT_COPY.heading}
+            </h1>
+            <p style={{ color: "#444", margin: 0, lineHeight: 1.5 }}>
+              {SUBMIT_COPY.intro}
+            </p>
+          </header>
+          <SubmitForm
+            action={submitAction}
+            mode="create"
+            revealLabel={revealLabel}
           />
-          <p style={{ color: "#555", margin: 0 }}>
-            You can change your name or request any time before {revealLabel}.
+          <p style={{ margin: 0, fontSize: "0.85rem", textAlign: "center" }}>
+            <Link href="/recover" style={{ color: "#3b5bdb" }}>
+              {RECOVERY_COPY.linkLabel}
+            </Link>
           </p>
-          {/* The recovery code is the only way back on another device (#8),
-              so it stays reachable rather than being a one-shot screen. */}
-          <Link href="/confirmed" style={{ color: "#3b5bdb" }}>
-            See my recovery code
-          </Link>
-        </header>
-        <SubmitForm
-          action={editAction}
-          mode="edit"
-          revealLabel={revealLabel}
-          defaults={{
-            firstName: existing.firstName,
-            lastName: existing.lastName,
-            request: existing.request,
-          }}
-        />
-      </main>
-    );
+        </main>
+      );
   }
-
-  // No entry yet: hard-closed after the reveal instant (§6).
-  if (revealOpen) {
-    return (
-      <Notice title="Submissions have closed">
-        The reveal time ({revealLabel}) has passed. Find an organizer — they can
-        help in person.
-      </Notice>
-    );
-  }
-
-  // The warm submit screen (§7.1).
-  return (
-    <main style={pageStyle}>
-      <header
-        style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
-      >
-        <h1 style={{ fontSize: "1.6rem", margin: 0 }}>{SUBMIT_COPY.heading}</h1>
-        <p style={{ color: "#444", margin: 0, lineHeight: 1.5 }}>
-          {SUBMIT_COPY.intro}
-        </p>
-      </header>
-      <SubmitForm
-        action={submitAction}
-        mode="create"
-        revealLabel={revealLabel}
-      />
-    </main>
-  );
 }

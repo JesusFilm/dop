@@ -165,8 +165,11 @@ export function formatZonedDateTime(instant: Date, timeZone: string): string {
 }
 
 /**
- * Just the wall-clock time in `timeZone`, e.g. "11:00" — the short form the
- * confirmation clock badge uses (§7.2). 24-hour so 14:30 never reads as 2:30.
+ * Renders just the wall-clock time of an instant in `timeZone`, e.g. "09:41".
+ * Date-free on purpose: the event is a single day, so the calendar date would be
+ * noise. 24-hour, matching {@link formatZonedDateTime}, so there is no am/pm
+ * ambiguity. Two surfaces want it — the confirmation clock badge (§7.2) and the
+ * return view's "Shared at …" label (§7.3).
  */
 export function formatZonedTime(instant: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-NZ", {

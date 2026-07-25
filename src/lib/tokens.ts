@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import { RECOVERY_ALPHABET, RECOVERY_CODE_LENGTH } from "@/lib/recovery";
+
 /**
  * Server-only credential generators for a submission (§6, #8). Isolated from
  * the browser-safe {@link module:@/lib/submit} because they depend on
@@ -15,20 +17,19 @@ export function generateDeviceToken(): string {
   return randomUUID();
 }
 
-const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const RECOVERY_LENGTH = 6;
-
 /**
  * A short, human-legible recovery code (#8) — the bearer credential shown on
  * the confirmation screen that restores the return view on any device. Drawn from an
  * unambiguous alphabet (no 0/O or 1/I) so it survives being read off a
  * screenshot — which is exactly how the confirmation screen (§7.2) tells people
- * to keep it.
+ * to keep it. The alphabet and length come from the browser-safe
+ * {@link module:@/lib/recovery}, which the entry form validates against, so the
+ * generator and the validator can never drift apart.
  */
 export function generateRecoveryCode(): string {
-  const bytes = randomBytes(RECOVERY_LENGTH);
+  const bytes = randomBytes(RECOVERY_CODE_LENGTH);
   let code = "";
-  for (let i = 0; i < RECOVERY_LENGTH; i += 1) {
+  for (let i = 0; i < RECOVERY_CODE_LENGTH; i += 1) {
     code += RECOVERY_ALPHABET[bytes[i] % RECOVERY_ALPHABET.length];
   }
   return code;

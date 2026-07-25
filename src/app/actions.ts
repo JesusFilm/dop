@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getDatabase } from "@/lib/db";
+import { setDeviceCookie } from "@/lib/device-cookie";
 import {
   createSubmission,
   findCurrentSession,
@@ -43,9 +44,6 @@ const EDIT_LOCKED_MESSAGE =
  */
 const CONFIRMATION_PATH = "/confirmed";
 
-/** Two days covers the open→reveal window and the next-morning return (§10). */
-const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
-
 /**
  * How many times to regenerate the recovery code and retry a create when the
  * insert loses the `(sessionId, recoveryCode)` unique race. A collision is
@@ -53,17 +51,6 @@ const DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 2;
  * ample and bounds the loop.
  */
 const MAX_RECOVERY_CODE_ATTEMPTS = 5;
-
-async function setDeviceCookie(token: string): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.set(DEVICE_TOKEN_COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: DEVICE_COOKIE_MAX_AGE_SECONDS,
-  });
-}
 
 /** Prisma raises P2002 when a unique constraint is violated. */
 function isUniqueViolation(error: unknown): boolean {
