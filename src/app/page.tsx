@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 
@@ -115,6 +116,11 @@ export default async function Home() {
           <p style={{ color: "#555", margin: 0 }}>
             You can change your name or request any time before {revealLabel}.
           </p>
+          {/* The recovery code is the only way back on another device (#8),
+              so it stays reachable rather than being a one-shot screen. */}
+          <Link href="/confirmed" style={{ color: "#3b5bdb" }}>
+            See my recovery code
+          </Link>
         </header>
         <SubmitForm
           action={editAction}

@@ -121,7 +121,7 @@ describe("submitAction", () => {
     expect(createSubmission).not.toHaveBeenCalled();
   });
 
-  it("persists the submission, sets the device cookie, and redirects", async () => {
+  it("persists the submission, sets the device cookie, and redirects to the confirmation screen (§7.2)", async () => {
     const cookieJar = fakeCookies();
     vi.mocked(cookies).mockResolvedValue(cookieJar.store as never);
     vi.mocked(findCurrentSession).mockResolvedValue({
@@ -132,7 +132,7 @@ describe("submitAction", () => {
 
     await expect(
       submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
-    ).rejects.toThrow("REDIRECT:/");
+    ).rejects.toThrow("REDIRECT:/confirmed");
 
     expect(createSubmission).toHaveBeenCalledTimes(1);
     const createArg = vi.mocked(createSubmission).mock.calls[0][1];
@@ -156,7 +156,9 @@ describe("submitAction", () => {
       path: "/",
     });
 
-    expect(redirect).toHaveBeenCalledWith("/");
+    // The recovery code is only ever shown once, on the confirmation screen —
+    // a fresh submission must land there, not back on the submit landing.
+    expect(redirect).toHaveBeenCalledWith("/confirmed");
   });
 
   it("prevents a second submission from the same device (one per deviceToken, §6)", async () => {
@@ -227,7 +229,7 @@ describe("submitAction", () => {
 
     await expect(
       submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
-    ).rejects.toThrow("REDIRECT:/");
+    ).rejects.toThrow("REDIRECT:/confirmed");
 
     // The submission was actually persisted on retry, with a freshly minted
     // recovery code each attempt — never treated as already-submitted.
@@ -239,7 +241,7 @@ describe("submitAction", () => {
     expect(secondCode).toBeTruthy();
     expect(secondCode).not.toBe(firstCode);
     expect(cookieJar.setCalls).toHaveLength(1);
-    expect(redirect).toHaveBeenCalledWith("/");
+    expect(redirect).toHaveBeenCalledWith("/confirmed");
   });
 
   it("gives up with a generic error after exhausting recovery-code retries", async () => {
@@ -279,10 +281,10 @@ describe("submitAction", () => {
 
     await expect(
       submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
-    ).rejects.toThrow("REDIRECT:/");
+    ).rejects.toThrow("REDIRECT:/confirmed");
 
     expect(createSubmission).toHaveBeenCalledTimes(2);
-    expect(redirect).toHaveBeenCalledWith("/");
+    expect(redirect).toHaveBeenCalledWith("/confirmed");
   });
 
   it("treats a persistent unknown-target P2002 on a reused token as a device race (return view)", async () => {
@@ -375,13 +377,13 @@ describe("submitAction", () => {
 
     await expect(
       submitAction(INITIAL_SUBMIT_STATE, VALID_FORM),
-    ).rejects.toThrow("REDIRECT:/");
+    ).rejects.toThrow("REDIRECT:/confirmed");
 
     const createArg = vi.mocked(createSubmission).mock.calls[0][1];
     expect(createArg.deviceToken).toBe("device-abc");
     expect(cookieJar.setCalls).toHaveLength(1);
     expect(cookieJar.setCalls[0].value).toBe("device-abc");
-    expect(redirect).toHaveBeenCalledWith("/");
+    expect(redirect).toHaveBeenCalledWith("/confirmed");
   });
 });
 

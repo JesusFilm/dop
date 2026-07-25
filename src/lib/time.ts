@@ -163,3 +163,33 @@ export function formatZonedDateTime(instant: Date, timeZone: string): string {
     hourCycle: "h23",
   }).format(instant);
 }
+
+/**
+ * Just the wall-clock time in `timeZone`, e.g. "11:00" — the short form the
+ * confirmation clock badge uses (§7.2). 24-hour so 14:30 never reads as 2:30.
+ */
+export function formatZonedTime(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-NZ", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(instant);
+}
+
+/**
+ * The instant as the §7.2 "11:00 on Monday" phrase. The event is a single day,
+ * so the weekday reads more naturally than a full date in the thank-you copy.
+ * Both parts are resolved in `timeZone`, so an instant that is still Sunday in
+ * UTC correctly reads as Monday for an Auckland session.
+ */
+export function formatZonedWeekdayTime(
+  instant: Date,
+  timeZone: string,
+): string {
+  const weekday = new Intl.DateTimeFormat("en-NZ", {
+    timeZone,
+    weekday: "long",
+  }).format(instant);
+  return `${formatZonedTime(instant, timeZone)} on ${weekday}`;
+}

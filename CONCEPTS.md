@@ -42,6 +42,8 @@ The organizer-set instant at which the Session begins accepting Submissions. The
 
 The principle that the running application's own clock — not any scheduler or trigger — is the sole authority for whether the Reveal time has passed. Schedulers may drift and only _nudge_ computation; the sharp boundary is always the app's own comparison of now against the Reveal time.
 
+Authority is exercised per request. A view already delivered to a device carries the decision made at the moment it was rendered, and it does not become wrong quietly — it stays confidently stale. Any surface a participant may still be looking at when the Reveal time arrives must therefore ask the app again rather than assume; a screen that tells someone to wait for the boundary is the one most certain to be open across it — see [Server-authoritative time gating](docs/solutions/design-patterns/server-authoritative-time-gating.md).
+
 ### Hard cutoff
 
 The rule that, once the app clock reaches the Reveal time, the server rejects new or edited Submissions outright. Late arrivals miss the window by design and are handled in person.
