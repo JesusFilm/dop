@@ -34,21 +34,21 @@ describe("journey validation", () => {
   });
 
   it.each([
-    { minutes: 60, available: true },
-    { minutes: 90, available: true },
-    { minutes: 59, available: false },
-    { minutes: 91, available: false },
+    { name: "two-study 20-minute", durations: [600, 600], available: true },
+    { name: "19-minute", durations: [19 * 60], available: false },
+    { name: "90-minute", durations: [90 * 60], available: true },
+    { name: "91-minute", durations: [91 * 60], available: false },
   ])(
-    "treats a $minutes-minute journey availability as $available",
-    async ({ minutes, available }) => {
+    "treats a $name journey availability as $available",
+    async ({ durations, available }) => {
       process.env.JOURNEY_TEST_MODULES = "enabled";
       const journey = await getValidJourney(
-        databaseWithModules([
-          {
-            position: 0,
-            recommendedSeconds: minutes * 60,
-          },
-        ]),
+        databaseWithModules(
+          durations.map((recommendedSeconds, position) => ({
+            position,
+            recommendedSeconds,
+          })),
+        ),
         "00000000-0000-0000-0000-000000000001",
       );
 
@@ -64,6 +64,13 @@ describe("journey validation", () => {
     {
       name: "position gap",
       modules: [{ position: 1, recommendedSeconds: 3_600 }],
+    },
+    {
+      name: "non-positive duration",
+      modules: [
+        { position: 0, recommendedSeconds: 3_600 },
+        { position: 1, recommendedSeconds: 0 },
+      ],
     },
     {
       name: "unknown behavior",

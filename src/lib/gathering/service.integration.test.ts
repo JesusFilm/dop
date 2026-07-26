@@ -12,6 +12,8 @@ import {
   takeOverLeader,
 } from "@/lib/gathering/service";
 import {
+  KNOWING_GOD_CONFIGURATION,
+  KNOWING_GOD_MODULE_ID,
   PRODUCTION_JOURNEY_ID,
   SHORT_STUDY_CONFIGURATION,
   SHORT_STUDY_MODULE_ID,
@@ -412,21 +414,36 @@ describe("gathering lifecycle", () => {
       }),
     ).toEqual({ journeyId: PRODUCTION_JOURNEY_ID });
     expect(
-      await getDatabase().journeyModule.findUnique({
-        where: { id: SHORT_STUDY_MODULE_ID },
+      await getDatabase().journeyModule.findMany({
+        where: { journeyId: PRODUCTION_JOURNEY_ID },
+        orderBy: { position: "asc" },
         select: {
+          id: true,
+          position: true,
           behaviorKey: true,
           title: true,
           recommendedSeconds: true,
           configuration: true,
         },
       }),
-    ).toEqual({
-      behaviorKey: "short-study",
-      title: "Why we pray",
-      recommendedSeconds: 3_600,
-      configuration: SHORT_STUDY_CONFIGURATION,
-    });
+    ).toEqual([
+      {
+        id: KNOWING_GOD_MODULE_ID,
+        position: 0,
+        behaviorKey: "short-study",
+        title: "Knowing God",
+        recommendedSeconds: 600,
+        configuration: KNOWING_GOD_CONFIGURATION,
+      },
+      {
+        id: SHORT_STUDY_MODULE_ID,
+        position: 1,
+        behaviorKey: "short-study",
+        title: "Why we pray",
+        recommendedSeconds: 600,
+        configuration: SHORT_STUDY_CONFIGURATION,
+      },
+    ]);
 
     for (const [name, token] of [
       ["Ana", "short-ana"],
@@ -457,11 +474,17 @@ describe("gathering lifecycle", () => {
     expect(active).toMatchObject({
       journey: {
         state: "ACTIVE",
-        expectedState: `${SHORT_STUDY_MODULE_ID}:0`,
+        expectedState: `${KNOWING_GOD_MODULE_ID}:0`,
         module: {
+          id: KNOWING_GOD_MODULE_ID,
+          title: "Knowing God",
+          recommendedSeconds: 600,
           behaviorKey: "short-study",
           shortStudy: {
-            contribution: { kind: "passage" },
+            contribution: {
+              kind: "passage",
+              label: "Ephesians 1:15–23",
+            },
             viewerRole: "leader",
           },
         },
@@ -534,11 +557,60 @@ describe("gathering lifecycle", () => {
       expectedRevision: active.revision,
     });
     expect(await getParticipantSnapshot(leaderToken)).toMatchObject({
-      journey: { expectedState: `${SHORT_STUDY_MODULE_ID}:0` },
+      journey: { expectedState: `${KNOWING_GOD_MODULE_ID}:0` },
     });
 
     let current: Awaited<ReturnType<typeof getParticipantSnapshot>> =
       afterStudyTakeover;
+    for (let index = 1; index <= 4; index += 1) {
+      await advanceRoomJourney({
+        sessionTokenHash: leaderToken,
+        expectedState:
+          current.state === "ROOM" && current.journey?.state === "ACTIVE"
+            ? current.journey.expectedState
+            : "",
+        expectedRevision: current.revision,
+      });
+      current = await getParticipantSnapshot(leaderToken);
+      expect(current).toMatchObject({
+        journey: { expectedState: `${KNOWING_GOD_MODULE_ID}:${index}` },
+      });
+    }
+
+    const knowingGodStartedAt =
+      current.state === "ROOM" && current.journey?.state === "ACTIVE"
+        ? current.journey.module.startedAt
+        : "";
+    await getDatabase().roomJourney.updateMany({
+      where: { journeyId: PRODUCTION_JOURNEY_ID },
+      data: { moduleStartedAt: new Date("2026-01-01T00:00:00.000Z") },
+    });
+    await advanceRoomJourney({
+      sessionTokenHash: leaderToken,
+      expectedState:
+        current.state === "ROOM" && current.journey?.state === "ACTIVE"
+          ? current.journey.expectedState
+          : "",
+      expectedRevision: current.revision,
+    });
+    current = await getParticipantSnapshot(leaderToken);
+    expect(current).toMatchObject({
+      journey: {
+        expectedState: `${SHORT_STUDY_MODULE_ID}:0`,
+        module: {
+          id: SHORT_STUDY_MODULE_ID,
+          title: "Why we pray",
+          recommendedSeconds: 600,
+          shortStudy: { contribution: { kind: "passage" } },
+        },
+      },
+    });
+    expect(
+      current.state === "ROOM" && current.journey?.state === "ACTIVE"
+        ? current.journey.module.startedAt
+        : "",
+    ).not.toBe(knowingGodStartedAt);
+
     for (let index = 1; index <= 5; index += 1) {
       await advanceRoomJourney({
         sessionTokenHash: leaderToken,
