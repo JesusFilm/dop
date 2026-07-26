@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { disconnectDatabase, getDatabase } from "@/lib/db";
 import { ACTIVE_GATHERING_ID } from "@/lib/gathering/constants";
 import {
+  advanceRoomJourney,
   getOrganizerSnapshot,
   getParticipantSnapshot,
   joinParticipant,
@@ -25,6 +26,39 @@ async function clearGathering() {
   await database.gathering.deleteMany({
     where: { id: ACTIVE_GATHERING_ID },
   });
+  await database.journey.deleteMany();
+}
+
+async function seedJourney() {
+  await getOrganizerSnapshot();
+  const journey = await getDatabase().journey.create({
+    data: {
+      name: "Prayer journey",
+      modules: {
+        create: [
+          {
+            position: 0,
+            behaviorKey: "test-guided-prayer",
+            title: "Prayer and praise",
+            recommendedSeconds: 1_800,
+            configuration: { prompt: "Pray together." },
+          },
+          {
+            position: 1,
+            behaviorKey: "test-guided-prayer",
+            title: "Reflection",
+            recommendedSeconds: 1_800,
+            configuration: { prompt: "Reflect together." },
+          },
+        ],
+      },
+    },
+  });
+  await getDatabase().gathering.update({
+    where: { id: ACTIVE_GATHERING_ID },
+    data: { journeyId: journey.id },
+  });
+  return journey;
 }
 
 async function seedRooms(
@@ -50,7 +84,13 @@ async function seedRooms(
 }
 
 describe("gathering lifecycle", () => {
-  beforeEach(clearGathering);
+  beforeEach(async () => {
+    process.env.JOURNEY_TEST_MODULES = "enabled";
+    process.env.PRAYER_REQUEST_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString(
+      "base64",
+    );
+    await clearGathering();
+  });
   afterAll(async () => {
     await clearGathering();
     await disconnectDatabase();
@@ -169,6 +209,159 @@ describe("gathering lifecycle", () => {
     const reset = await getOrganizerSnapshot();
     expect(reset).toMatchObject({ phase: "FORMING", participantCount: 0 });
     expect(reset.rooms).toHaveLength(2);
+  });
+
+  it("runs independent room journeys with replay-safe coordinator progression", async () => {
+    const journey = await seedJourney();
+    await seedRooms([
+      { name: "Olive Grove", maxCapacity: null },
+      { name: "Upper Room", maxCapacity: null },
+    ]);
+    await joinParticipant({
+      displayName: "First coordinator",
+      prayerRequest: "",
+      sessionTokenHash: "first-journey".padStart(64, "0"),
+    });
+    await joinParticipant({
+      displayName: "Second coordinator",
+      prayerRequest: "",
+      sessionTokenHash: "second-journey".padStart(64, "0"),
+    });
+    await joinParticipant({
+      displayName: "Third coordinator",
+      prayerRequest: "",
+      sessionTokenHash: "third-journey".padStart(64, "0"),
+    });
+    await joinParticipant({
+      displayName: "Fourth participant",
+      prayerRequest: "",
+      sessionTokenHash: "fourth-journey".padStart(64, "0"),
+    });
+
+    await launchGathering();
+    const gathering = await getParticipantSnapshot(
+      "first-journey".padStart(64, "0"),
+    );
+    expect(gathering).toMatchObject({
+      state: "ROOM",
+      journey: { state: "GATHERING", expectedState: "gathering" },
+    });
+
+    const tokenHash = "first-journey".padStart(64, "0");
+    await Promise.all([
+      advanceRoomJourney({
+        sessionTokenHash: tokenHash,
+        expectedState: "gathering",
+      }),
+      advanceRoomJourney({
+        sessionTokenHash: tokenHash,
+        expectedState: "gathering",
+      }),
+    ]);
+    const active = await getParticipantSnapshot(tokenHash);
+    expect(active).toMatchObject({
+      state: "ROOM",
+      journey: {
+        state: "ACTIVE",
+        module: { title: "Prayer and praise", recommendedSeconds: 1_800 },
+      },
+    });
+    const firstModuleId =
+      active.state === "ROOM" && active.journey?.state === "ACTIVE"
+        ? active.journey.module.id
+        : "";
+    const firstStartedAt =
+      active.state === "ROOM" && active.journey?.state === "ACTIVE"
+        ? active.journey.module.startedAt
+        : "";
+
+    const otherJourney = await getDatabase().journey.create({
+      data: {
+        name: "Other journey",
+        modules: {
+          create: {
+            position: 0,
+            behaviorKey: "test-guided-prayer",
+            title: "Other module",
+            recommendedSeconds: 3_600,
+            configuration: { prompt: "Other prompt." },
+          },
+        },
+      },
+      include: { modules: true },
+    });
+    const activeRoom = await getDatabase().room.findFirstOrThrow({
+      where: { participants: { some: { sessionTokenHash: tokenHash } } },
+    });
+    await expect(
+      getDatabase().roomJourney.update({
+        where: { roomId: activeRoom.id },
+        data: { currentModuleId: otherJourney.modules[0]!.id },
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      advanceRoomJourney({
+        sessionTokenHash: "second-journey".padStart(64, "0"),
+        expectedState: firstModuleId,
+      }),
+    ).rejects.toMatchObject({ code: "COORDINATOR_REQUIRED" });
+    await joinParticipant({
+      displayName: "Late participant",
+      prayerRequest: "",
+      sessionTokenHash: "late-journey".padStart(64, "0"),
+    });
+    expect(
+      await getParticipantSnapshot("late-journey".padStart(64, "0")),
+    ).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        joinedInProgress: true,
+        module: { startedAt: firstStartedAt },
+      },
+    });
+    await takeOverCoordinator("second-journey".padStart(64, "0"));
+    const afterTakeover = await getParticipantSnapshot(
+      "second-journey".padStart(64, "0"),
+    );
+    expect(afterTakeover).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        module: { id: firstModuleId, startedAt: firstStartedAt },
+      },
+    });
+    const activeCoordinatorToken = "second-journey".padStart(64, "0");
+
+    await advanceRoomJourney({
+      sessionTokenHash: activeCoordinatorToken,
+      expectedState: firstModuleId,
+    });
+    const secondModule = await getParticipantSnapshot(activeCoordinatorToken);
+    expect(secondModule).toMatchObject({
+      journey: { state: "ACTIVE", module: { title: "Reflection" } },
+    });
+    const secondModuleId =
+      secondModule.state === "ROOM" && secondModule.journey?.state === "ACTIVE"
+        ? secondModule.journey.module.id
+        : "";
+    await advanceRoomJourney({
+      sessionTokenHash: activeCoordinatorToken,
+      expectedState: secondModuleId,
+    });
+    expect(await getParticipantSnapshot(activeCoordinatorToken)).toMatchObject({
+      journey: { state: "COMPLETED" },
+    });
+    expect(
+      await getParticipantSnapshot("third-journey".padStart(64, "0")),
+    ).toMatchObject({
+      journey: { state: "GATHERING" },
+    });
+
+    await resetGathering();
+    expect(
+      await getDatabase().journey.findUnique({ where: { id: journey.id } }),
+    ).not.toBeNull();
+    expect(await getDatabase().roomJourney.count()).toBe(0);
   });
 
   it("makes the first late arrival coordinator of an empty room", async () => {

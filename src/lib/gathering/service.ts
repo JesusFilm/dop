@@ -12,6 +12,8 @@ import type {
   OrganizerSnapshot,
   ParticipantSnapshot,
 } from "@/lib/gathering/types";
+import { validateJourneyModule } from "@/lib/journey/registry";
+import { getValidJourney } from "@/lib/journey/service";
 
 type Transaction = Prisma.TransactionClient;
 
@@ -87,6 +89,18 @@ function capacityStatus(rooms: { id: string; maxCapacity: number | null }[]) {
   };
 }
 
+function organizerJourneyState(
+  runtime: {
+    currentModuleId: string | null;
+    completedAt: Date | null;
+  } | null,
+): "unavailable" | "gathering" | "active" | "completed" {
+  if (!runtime) return "unavailable";
+  if (runtime.completedAt) return "completed";
+  if (runtime.currentModuleId) return "active";
+  return "gathering";
+}
+
 function assertValidRoomConfiguration(
   rooms: { id: string; maxCapacity: number | null }[],
 ): void {
@@ -117,12 +131,31 @@ export async function getParticipantSnapshot(
       id: true,
       displayName: true,
       gatheringId: true,
+      joinedAt: true,
       room: {
         select: {
           id: true,
           name: true,
           directions: true,
           coordinatorId: true,
+          journeyRuntime: {
+            select: {
+              journeyId: true,
+              journey: { select: { name: true } },
+              currentModuleId: true,
+              currentModule: {
+                select: {
+                  id: true,
+                  behaviorKey: true,
+                  title: true,
+                  recommendedSeconds: true,
+                  configuration: true,
+                },
+              },
+              moduleStartedAt: true,
+              completedAt: true,
+            },
+          },
           participants: {
             orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
             select: { id: true, displayName: true },
@@ -147,6 +180,53 @@ export async function getParticipantSnapshot(
     };
   }
 
+  const runtime = participant.room.journeyRuntime;
+  const joinedInProgress =
+    gathering.launchedAt !== null &&
+    participant.joinedAt.getTime() > gathering.launchedAt.getTime();
+  let journey: Extract<ParticipantSnapshot, { state: "ROOM" }>["journey"];
+
+  if (runtime) {
+    if (runtime.completedAt) {
+      journey = {
+        state: "COMPLETED",
+        journeyName: runtime.journey.name,
+        expectedState: "completed",
+        joinedInProgress,
+      };
+    } else if (!runtime.currentModuleId || !runtime.moduleStartedAt) {
+      journey = {
+        state: "GATHERING",
+        journeyName: runtime.journey.name,
+        expectedState: "gathering",
+        joinedInProgress,
+      };
+    } else if (runtime.currentModule) {
+      try {
+        const clientModule = validateJourneyModule(
+          runtime.currentModule.behaviorKey,
+          runtime.currentModule.configuration,
+        );
+        journey = {
+          state: "ACTIVE",
+          journeyName: runtime.journey.name,
+          expectedState: runtime.currentModule.id,
+          joinedInProgress,
+          module: {
+            id: runtime.currentModule.id,
+            title: runtime.currentModule.title,
+            recommendedSeconds: runtime.currentModule.recommendedSeconds,
+            ...clientModule,
+            startedAt: runtime.moduleStartedAt.toISOString(),
+            serverTime: new Date().toISOString(),
+          },
+        };
+      } catch {
+        journey = undefined;
+      }
+    }
+  }
+
   return {
     state: "ROOM",
     revision: gathering.revision,
@@ -161,13 +241,14 @@ export async function getParticipantSnapshot(
         isCoordinator: member.id === participant.room?.coordinatorId,
       })),
     },
+    ...(journey ? { journey } : {}),
   };
 }
 
 export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
   const database = getDatabase();
   const gathering = await ensureGathering(database);
-  const [participantCount, rooms] = await Promise.all([
+  const [participantCount, rooms, validJourney] = await Promise.all([
     database.participant.count({
       where: { gatheringId: ACTIVE_GATHERING_ID },
     }),
@@ -180,8 +261,12 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
           select: { id: true, displayName: true },
         },
         coordinator: { select: { displayName: true } },
+        journeyRuntime: {
+          select: { currentModuleId: true, completedAt: true },
+        },
       },
     }),
+    getValidJourney(database, gathering.journeyId),
   ]);
   const status = capacityStatus(rooms);
 
@@ -190,6 +275,10 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
     revision: gathering.revision,
     participantCount,
     ...status,
+    journey: {
+      available: validJourney !== null,
+      name: validJourney?.name ?? null,
+    },
     rooms: rooms.map((room) => ({
       id: room.id,
       name: room.name,
@@ -200,6 +289,9 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
         gathering.phase === "ASSIGNED"
           ? (room.coordinator?.displayName ?? null)
           : null,
+      journeyState: organizerJourneyState(
+        validJourney ? room.journeyRuntime : null,
+      ),
       members: room.participants.map((participant) => ({
         id: participant.id,
         name: participant.displayName,
@@ -282,6 +374,19 @@ export async function joinParticipant(input: {
         data: { coordinatorId: participant.id },
       });
     }
+    if (gathering.phase === "ASSIGNED") {
+      const validJourney = await getValidJourney(
+        transaction,
+        gathering.journeyId,
+      );
+      if (validJourney) {
+        await transaction.roomJourney.upsert({
+          where: { roomId: room.id },
+          create: { roomId: room.id, journeyId: validJourney.id },
+          update: {},
+        });
+      }
+    }
     await transaction.gathering.update({
       where: { id: ACTIVE_GATHERING_ID },
       data: { revision: { increment: 1 } },
@@ -313,6 +418,10 @@ export async function launchGathering(): Promise<void> {
       },
     });
     assertValidRoomConfiguration(rooms);
+    const validJourney = await getValidJourney(
+      transaction,
+      gathering.journeyId,
+    );
 
     for (const room of rooms) {
       const firstParticipant = room.participants[0];
@@ -322,6 +431,19 @@ export async function launchGathering(): Promise<void> {
         where: { id: room.id, coordinatorId: null },
         data: { coordinatorId: firstParticipant.id },
       });
+      if (validJourney) {
+        await transaction.roomJourney.upsert({
+          where: { roomId: room.id },
+          create: { roomId: room.id, journeyId: validJourney.id },
+          update: {
+            journeyId: validJourney.id,
+            currentModuleId: null,
+            moduleStartedAt: null,
+            completedAt: null,
+            moduleState: Prisma.DbNull,
+          },
+        });
+      }
     }
     await transaction.gathering.update({
       where: { id: ACTIVE_GATHERING_ID },
@@ -330,6 +452,103 @@ export async function launchGathering(): Promise<void> {
         launchedAt: new Date(),
         revision: { increment: 1 },
       },
+    });
+  });
+}
+
+export async function advanceRoomJourney(input: {
+  sessionTokenHash: string;
+  expectedState: string;
+}): Promise<void> {
+  await serializedTransaction(async (transaction) => {
+    const participant = await transaction.participant.findFirst({
+      where: {
+        sessionTokenHash: input.sessionTokenHash,
+        gatheringId: ACTIVE_GATHERING_ID,
+      },
+      select: {
+        id: true,
+        roomId: true,
+        room: { select: { coordinatorId: true } },
+        gathering: { select: { phase: true } },
+      },
+    });
+    if (
+      !participant?.roomId ||
+      participant.room?.coordinatorId !== participant.id
+    ) {
+      throw new GatheringError(
+        "Only the room coordinator can continue the journey.",
+        "COORDINATOR_REQUIRED",
+        403,
+      );
+    }
+    if (participant.gathering.phase !== "ASSIGNED") {
+      throw new GatheringError(
+        "Room assignments have not been revealed.",
+        "NOT_REVEALED",
+        409,
+      );
+    }
+
+    const runtime = await transaction.roomJourney.findUnique({
+      where: { roomId: participant.roomId },
+    });
+    if (!runtime) {
+      throw new GatheringError(
+        "No guided journey is available for this room.",
+        "JOURNEY_UNAVAILABLE",
+        409,
+      );
+    }
+    const validJourney = await getValidJourney(transaction, runtime.journeyId);
+    if (!validJourney) {
+      throw new GatheringError(
+        "The guided journey is unavailable.",
+        "JOURNEY_UNAVAILABLE",
+        409,
+      );
+    }
+
+    const currentState =
+      runtime.completedAt !== null
+        ? "completed"
+        : (runtime.currentModuleId ?? "gathering");
+    if (input.expectedState !== currentState) return;
+    if (runtime.completedAt) return;
+
+    const currentIndex = runtime.currentModuleId
+      ? validJourney.modules.findIndex(
+          ({ id }) => id === runtime.currentModuleId,
+        )
+      : -1;
+    if (runtime.currentModuleId && currentIndex === -1) {
+      throw new GatheringError(
+        "The room journey state is invalid.",
+        "JOURNEY_STATE_INVALID",
+        409,
+      );
+    }
+    const nextModule = validJourney.modules[currentIndex + 1];
+    const now = new Date();
+    await transaction.roomJourney.update({
+      where: { id: runtime.id },
+      data: nextModule
+        ? {
+            currentModuleId: nextModule.id,
+            moduleStartedAt: now,
+            moduleState: Prisma.DbNull,
+          }
+        : {
+            currentModuleId: null,
+            moduleStartedAt: null,
+            completedAt: now,
+            moduleState: Prisma.DbNull,
+          },
+    });
+    await transaction.gathering.update({
+      where: { id: ACTIVE_GATHERING_ID },
+      data: { revision: { increment: 1 } },
     });
   });
 }
@@ -384,6 +603,9 @@ export async function takeOverCoordinator(
 
 export async function resetGathering(): Promise<void> {
   await serializedTransaction(async (transaction) => {
+    await transaction.roomJourney.deleteMany({
+      where: { room: { gatheringId: ACTIVE_GATHERING_ID } },
+    });
     await transaction.room.updateMany({
       where: { gatheringId: ACTIVE_GATHERING_ID },
       data: { coordinatorId: null },

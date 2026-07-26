@@ -55,6 +55,11 @@ function RoomCard({
             ? "Unlimited"
             : `Maximum ${room.maxCapacity}`}
         </p>
+        {revealed && room.journeyState !== "unavailable" ? (
+          <p className="mt-1 text-xs font-semibold capitalize text-primary">
+            Journey: {room.journeyState}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -244,6 +249,25 @@ export function OrganizerDashboard({
                 </p>
               </div>
 
+              <div
+                className={
+                  snapshot.journey.available
+                    ? "mt-7 rounded-2xl bg-sky-50 px-5 py-4 text-sky-950"
+                    : "mt-7 rounded-2xl bg-amber-50 px-5 py-4 text-amber-950"
+                }
+              >
+                <p className="font-semibold">
+                  {snapshot.journey.available
+                    ? `${snapshot.journey.name} is ready`
+                    : "Guided journey unavailable"}
+                </p>
+                <p className="mt-1 text-sm leading-6">
+                  {snapshot.journey.available
+                    ? "Reveal will place each room in its gathering state. Coordinators begin when their room is ready."
+                    : "Reveal will still show room assignments. No guided activities will begin until a valid journey is configured."}
+                </p>
+              </div>
+
               {snapshot.phase === "ASSIGNED" ? (
                 <div className="mt-9 flex items-center gap-4 rounded-3xl bg-primary-faint p-5 text-primary">
                   <BadgeCheck aria-hidden="true" className="size-8 shrink-0" />
@@ -293,8 +317,8 @@ export function OrganizerDashboard({
         }
         description={
           confirmation?.kind === "launch"
-            ? `This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. Those assignments are final until the gathering is reset.`
-            : "This clears every participant and prayer request, but keeps the seeded rooms."
+            ? `This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. ${snapshot.journey.available ? "Each room will then gather before its coordinator starts the journey." : "The guided journey is unavailable, so only the room handoff will begin."} Those assignments are final until the gathering is reset.`
+            : "This clears every participant, prayer request, and room journey progress, but keeps the seeded rooms and reusable journey configuration."
         }
       >
         <div className="flex flex-col gap-3">
