@@ -99,8 +99,8 @@ async function main() {
     }
 
     await post(
-      "/api/participant/coordinator",
-      undefined,
+      "/api/participant/leader",
+      { expectedRevision: roomSnapshots[0]?.revision },
       participants[0]?.cookie,
     );
     const late = await post("/api/participant", {

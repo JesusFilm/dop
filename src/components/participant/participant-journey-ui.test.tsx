@@ -51,8 +51,8 @@ const activeSnapshot: RoomSnapshot = {
     name: "Boardroom",
     directions: "Upstairs",
     members: [
-      { id: "participant-1", name: "Ana", isCoordinator: true },
-      { id: "participant-2", name: "Ben", isCoordinator: false },
+      { id: "participant-1", name: "Ana", isLeader: true },
+      { id: "participant-2", name: "Ben", isLeader: false },
     ],
   },
   journey: activeJourney,
@@ -142,13 +142,14 @@ describe("ParticipantExperience journey progression", () => {
   });
 });
 
-describe("ModuleShell coordinator controls", () => {
-  it("shows Continue only to the coordinator", () => {
+describe("ModuleShell leader controls", () => {
+  it("shows Continue only to the leader", () => {
     render(
       <ModuleShell
         snapshot={activeSnapshot}
         journey={activeJourney}
         onAdvance={vi.fn()}
+        onReassign={vi.fn()}
         onTakeover={vi.fn()}
         isPending={false}
         error=""
@@ -158,8 +159,91 @@ describe("ModuleShell coordinator controls", () => {
     expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
     expect(
       screen.queryByRole("button", {
-        name: "Coordinator unavailable? Take over",
+        name: "Leader unavailable? Take over",
       }),
+    ).toBeNull();
+  });
+
+  it("shows shared Short Study content with leader and reader-specific cues", () => {
+    const shortStudyJourney: ActiveJourney = {
+      ...activeJourney,
+      expectedState: "module-1:0",
+      module: {
+        id: "module-1",
+        title: "Why we pray",
+        behaviorKey: "short-study",
+        configuration: {
+          translation: "Berean Standard Bible (BSB)",
+        },
+        recommendedSeconds: 3_600,
+        startedAt: "2026-07-26T00:00:00.000Z",
+        serverTime: "2026-07-26T00:01:00.000Z",
+        shortStudy: {
+          contribution: {
+            id: "passage",
+            kind: "passage",
+            label: "Hebrews 4:14–16",
+            text: "Let us then approach the throne of grace.",
+          },
+          contributionNumber: 1,
+          contributionCount: 3,
+          reader: { id: "participant-2", name: "Ben" },
+          viewerRole: "leader",
+          canReassign: true,
+        },
+      },
+    };
+    const { rerender } = render(
+      <ModuleShell
+        snapshot={activeSnapshot}
+        journey={shortStudyJourney}
+        onAdvance={vi.fn()}
+        onReassign={vi.fn().mockResolvedValue("changed")}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    expect(screen.getByText("Ask Ben to read this aloud.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Reassign current reader" }),
+    ).toBeTruthy();
+    if (shortStudyJourney.module.behaviorKey !== "short-study") {
+      throw new Error("Expected Short Study fixture");
+    }
+
+    rerender(
+      <ModuleShell
+        snapshot={{
+          ...activeSnapshot,
+          participant: { id: "participant-2", name: "Ben" },
+        }}
+        journey={{
+          ...shortStudyJourney,
+          module: {
+            ...shortStudyJourney.module,
+            shortStudy: {
+              ...shortStudyJourney.module.shortStudy,
+              viewerRole: "reader",
+              canReassign: false,
+            },
+          },
+        }}
+        onAdvance={vi.fn()}
+        onReassign={vi.fn()}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    expect(screen.getByText("You’re reading this aloud")).toBeTruthy();
+    expect(
+      screen.getByText("Let us then approach the throne of grace."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Reassign current reader" }),
     ).toBeNull();
   });
 
@@ -173,6 +257,7 @@ describe("ModuleShell coordinator controls", () => {
         snapshot={memberSnapshot}
         journey={activeJourney}
         onAdvance={vi.fn()}
+        onReassign={vi.fn()}
         onTakeover={vi.fn().mockRejectedValue(new Error("Rejected"))}
         isPending={false}
         error=""
@@ -181,7 +266,7 @@ describe("ModuleShell coordinator controls", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Coordinator unavailable? Take over",
+        name: "Leader unavailable? Take over",
       }),
     );
     expect(
@@ -191,13 +276,13 @@ describe("ModuleShell coordinator controls", () => {
 
     expect(await screen.findByRole("alert")).toHaveProperty(
       "textContent",
-      "We couldn’t update the coordinator. Please try again.",
+      "We couldn’t update the leader. Please try again.",
     );
   });
 });
 
 describe("RoomAssignment journey start", () => {
-  it("shows and disables the start action only for the coordinator", () => {
+  it("shows and disables the start action only for the leader", () => {
     const onStartJourney = vi.fn();
     const gatheringSnapshot = {
       ...activeSnapshot,

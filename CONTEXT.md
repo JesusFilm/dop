@@ -4,7 +4,7 @@ A single live, in-person Day of Prayer gathering for roughly 30–50 people.
 Participants join from one shared link, wait in a lobby, and receive a physical
 room assignment immediately. The organizer sees provisional room rosters while
 participants remain in the lobby; launch reveals those assignments. When a
-valid journey is configured, each room then gathers and its coordinator leads
+valid journey is configured, each room then gathers and its leader leads
 the room forward through the same ordered activities at its own pace.
 
 The room-handoff product contract is
@@ -24,22 +24,23 @@ Use these terms in code, tests, issues, and product copy.
 - **Room** — a seeded, application-read-only physical space with a name,
   wayfinding directions, and optional maximum capacity. A finite maximum is at
   least two, and the configuration always includes an unlimited room.
-- **Coordinator** — the first participant assigned to each non-empty room. Any
-  member can confirm an immediate takeover after launch.
-- **Launch** — reveals existing assignments and coordinator identities without
-  recalculating room membership. A configured journey enters its untimed
-  gathering state; launch does not start a module timer.
+- **Leader** — the first participant assigned to each non-empty room. Any
+  member can confirm an immediate takeover after launch. The organizer sees the
+  leader immediately; participants see them when assignments are revealed.
+- **Launch** — reveals existing assignments and leader identities to
+  participants without recalculating room membership. A configured journey
+  enters its untimed gathering state; launch does not start a module timer.
 - **Journey** — a reusable, database-configured ordered sequence of module
   instances shared by every room.
 - **Module instance** — one placement of application-defined behavior in a
   journey, with its own title, configuration, order, and recommended duration.
 - **Room journey** — a room's persistent gathering, current-module, timer, or
-  completed state. Only its coordinator can move it forward.
-- **Reset** — clears participants, requests, assignments, coordinators, and
+  completed state. Only its leader can move it forward.
+- **Reset** — clears participants, requests, assignments, leaders, and
   room-journey progress while preserving room and reusable journey
   configuration.
 - **Room handoff** — the participant screen showing the room, directions,
-  fellow members, and current coordinator.
+  fellow members, and current leader.
 
 ## Privacy boundary
 

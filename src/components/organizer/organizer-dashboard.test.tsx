@@ -21,11 +21,11 @@ const snapshot: OrganizerSnapshot = {
       directions: "Upstairs",
       maxCapacity: 8,
       memberCount: 2,
-      coordinatorName: null,
+      leaderName: "Ana",
       journeyState: "unavailable",
       members: [
-        { id: "participant-1", name: "Ana", isCoordinator: false },
-        { id: "participant-2", name: "Ben", isCoordinator: false },
+        { id: "participant-1", name: "Ana", isLeader: true },
+        { id: "participant-2", name: "Ben", isLeader: false },
       ],
     },
   ],
@@ -53,17 +53,17 @@ describe("OrganizerDashboard", () => {
     expect(html).toContain("Boardroom");
     expect(html).toContain("Ana");
     expect(html).toContain("Ben");
-    expect(html).not.toContain('aria-label="Coordinator"');
-    expect(html).not.toContain("lucide-star");
+    expect(html).toContain('aria-label="Leader"');
+    expect(html).toContain("lucide-star");
     expect(html).not.toContain("lucide-user-round");
-    expect(html).not.toContain("Coordinator: <strong");
+    expect(html).not.toContain("Leader: <strong");
     expect(html).toContain(">Reveal assignments<");
     expect(html).not.toContain(">Reveal room assignments<");
     expect(html).not.toContain(">2 participants</p>");
     expect(html).not.toContain("<details");
   });
 
-  it("shows journey progress and coordinator identity after reveal", () => {
+  it("shows journey progress after reveal without changing leader identity", () => {
     const html = renderToStaticMarkup(
       <OrganizerDashboard
         initialSnapshot={{
@@ -72,12 +72,12 @@ describe("OrganizerDashboard", () => {
           rooms: [
             {
               ...snapshot.rooms[0],
-              coordinatorName: "Ana",
+              leaderName: "Ana",
               journeyState: "gathering",
               members: [
                 {
                   ...snapshot.rooms[0].members[0],
-                  isCoordinator: true,
+                  isLeader: true,
                 },
                 snapshot.rooms[0].members[1],
               ],
@@ -88,7 +88,7 @@ describe("OrganizerDashboard", () => {
     );
 
     expect(html).toContain("Journey: gathering");
-    expect(html).toContain('aria-label="Coordinator"');
+    expect(html).toContain('aria-label="Leader"');
     expect(html).toContain("lucide-star");
     expect(html).toContain("Assignments revealed");
   });

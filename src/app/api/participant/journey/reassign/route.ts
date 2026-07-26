@@ -9,8 +9,8 @@ import {
 } from "@/lib/gathering/http";
 import { hashSessionToken } from "@/lib/gathering/session";
 import {
-  advanceRoomJourney,
   getParticipantSnapshot,
+  reassignShortStudyReader,
 } from "@/lib/gathering/service";
 
 export async function POST(request: Request) {
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         : -1;
     if (!expectedState) {
       throw new GatheringError(
-        "The current journey state is required.",
+        "The current activity state is required.",
         "EXPECTED_STATE_REQUIRED",
       );
     }
@@ -49,14 +49,19 @@ export async function POST(request: Request) {
       );
     }
     const tokenHash = hashSessionToken(token);
-    await advanceRoomJourney({
+    const result = await reassignShortStudyReader({
       sessionTokenHash: tokenHash,
       expectedState,
       expectedRevision,
     });
-    return NextResponse.json(await getParticipantSnapshot(tokenHash), {
-      headers: { "Cache-Control": "no-store" },
-    });
+    return NextResponse.json(
+      {
+        snapshot: await getParticipantSnapshot(tokenHash),
+        reassigned: result === "changed",
+        result,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return errorResponse(error);
   }

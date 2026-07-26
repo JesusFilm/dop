@@ -4,7 +4,7 @@ A mobile-first room-handoff app for one live, in-person Day of Prayer
 gathering. Participants join from one shared link, wait in a synchronized
 lobby, and receive an immediate hidden room assignment. The organizer monitors
 provisional rosters at `/admin`, then reveals assignments with each room’s
-first participant as coordinator.
+first participant as leader.
 
 The guided prayer experience after people reach their rooms is intentionally
 deferred.
@@ -83,8 +83,8 @@ For a remote non-production test environment, also set
    visible and are final until reset.
 4. Participants can still join afterward. Each late arrival is assigned to the
    first configured smallest eligible room without moving existing members or
-   replacing an existing coordinator.
-5. Expand room cards before or after reveal to inspect rosters and coordinators.
+   replacing an existing leader.
+5. Expand room cards before or after reveal to inspect rosters and leaders.
 6. Reset only when the run is finished or before a test run. Reset deletes live
    participant and prayer-request rows but does not control the separate
    retention period of provider-managed database backups.

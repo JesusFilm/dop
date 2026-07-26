@@ -53,8 +53,8 @@ export function AdminSettings() {
       <section className="mt-10 max-w-3xl rounded-3xl border border-danger/20 bg-white p-6 shadow-card sm:p-8">
         <h2 className="text-xl font-semibold text-ink">Reset gathering</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-          Clear all participants, assignments, coordinators, and launch state so
-          the gathering can start again. Seeded room configuration will be
+          Clear all participants, assignments, leaders, and launch state so the
+          gathering can start again. Seeded room configuration will be
           preserved, along with the reusable journey configuration.
         </p>
         <ActionButton
