@@ -6,11 +6,13 @@ import type {
   MinistryPrayerBundle,
   MinistryPrayerConfiguration,
 } from "@/lib/journey/ministry-prayer";
+import type { PersonalPrayerConfiguration } from "@/lib/journey/personal-prayer";
 
 export type JourneyModulePayloads = {
   "test-guided-prayer": { prompt: string };
   "short-study": ShortStudyConfiguration;
   "ministry-prayer": MinistryPrayerConfiguration;
+  "personal-prayer": PersonalPrayerConfiguration;
 };
 
 export type JourneyBehaviorKey = keyof JourneyModulePayloads;
@@ -61,6 +63,15 @@ export type MinistryPrayerPresentation = {
   bundleRecommendedSeconds: number;
 };
 
+export type PersonalPrayerPresentation = {
+  phase: "grouping" | "revealed";
+  members: {
+    id: string;
+    name: string;
+    request?: string | null;
+  }[];
+};
+
 export type PresentedJourneyModule =
   | Extract<JourneyClientModule, { behaviorKey: "test-guided-prayer" }>
   | {
@@ -72,4 +83,9 @@ export type PresentedJourneyModule =
       behaviorKey: "ministry-prayer";
       configuration: { bundlesPerRoom: number };
       ministryPrayer: MinistryPrayerPresentation;
+    }
+  | {
+      behaviorKey: "personal-prayer";
+      configuration: PersonalPrayerConfiguration;
+      personalPrayer: PersonalPrayerPresentation;
     };

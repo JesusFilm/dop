@@ -118,7 +118,7 @@ function buildMinistryPrayerPresentation(input: {
 }
 
 export function presentJourneyModule(input: {
-  module: ValidJourneyModule;
+  module: Exclude<ValidJourneyModule, { behaviorKey: "personal-prayer" }>;
   moduleState: unknown;
   room: Room;
   viewerId: string;

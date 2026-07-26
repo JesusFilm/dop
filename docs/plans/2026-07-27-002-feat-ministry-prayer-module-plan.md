@@ -84,9 +84,9 @@ The gathering instead needs collectively broad coverage, manageable room-sized p
 **Configuration, seed, and readiness**
 
 - R17. Reusable module behavior contains no July ministry wording; the production seed stores the exact content and bundle grouping in database configuration.
-- R18. The canonical production journey places the ministry prayer module after Knowing God and Why we pray with a 2,400-second recommendation.
-- R19. Both canonical Short Studies retain their agreed 600-second recommendations when ministry prayer is appended.
-- R20. The canonical journey remains valid at its current 60-minute total.
+- R18. The canonical production journey orders Knowing God, Why we pray, ministry prayer, then Personal prayer; ministry prayer has a 2,400-second recommendation.
+- R19. Both canonical Short Studies and Personal prayer retain their agreed 600-second recommendations.
+- R20. The canonical journey remains valid at its 70-minute total.
 
 **Responsive experience**
 
@@ -136,7 +136,7 @@ The gathering instead needs collectively broad coverage, manageable room-sized p
 - AE9. Refresh and Leader takeover preserve the same five bundles, current index, pair assignments, and both timer anchors.
 - AE10. Replaying the same advance request changes the current bundle once.
 - AE11. A solo room shows the one available participant once rather than duplicating their name; a two-person room assigns both people.
-- AE12. Production seeding stores the exact July ministry wording, preserves both 600-second Short Studies, adds ministry prayer at 2,400 seconds, and remains idempotent.
+- AE12. Production seeding stores the exact July ministry wording, preserves the two 600-second Short Studies and 600-second Personal prayer module, inserts ministry prayer before Personal prayer at 2,400 seconds, and remains idempotent.
 
 ### Success Criteria
 
@@ -149,11 +149,11 @@ The gathering instead needs collectively broad coverage, manageable room-sized p
 **In scope**
 
 - One reusable ministry prayer behavior, exact July seed content, deterministic room allocation, fair pair assignments, individual reassignment, dual advisory countdowns, synchronized UI, tests, and browser acceptance.
-- Compatibility with the two existing 600-second Short Studies and the canonical journey validity range.
+- Compatibility with the two existing 600-second Short Studies, the final 600-second Personal prayer module, and the canonical journey validity range.
 
 **Deferred to later**
 
-- Reflections, participant-submitted prayer requests, closing modules, and future monthly ministry content.
+- Reflections, additional closing modules, and future monthly ministry content.
 
 **Out of scope**
 
@@ -194,8 +194,8 @@ The gathering instead needs collectively broad coverage, manageable room-sized p
 - KTD5. **Behavior-dispatched progression:** Extend the existing serialized advance and expected-state protocol so ministry-prayer advances internal bundle state before transitioning to the next module.
 - KTD6. **Targeted reassignment contract:** Extend the existing Leader-only reassign action with a current-assignee target for ministry prayer while retaining Short Study behavior and stale-state protection.
 - KTD7. **Seed fixture separated from behavior:** Keep exact July wording in a dedicated seed-data fixture consumed by the production seeder; reusable validation, allocation, runtime, and UI code contain no report content.
-- KTD8. **Atomic canonical reconciliation:** Within the existing seed transaction, reconcile Knowing God, Why we pray, and ministry prayer to their stable IDs, exact positions, and approved configuration even for a running canonical journey.
-- KTD9. **Existing partial-journey availability:** Retain the accepted 20-90-minute availability range; the two 600-second Short Studies plus the 2,400-second ministry module total 60 minutes.
+- KTD8. **Atomic canonical reconciliation:** Within the existing seed transaction, reconcile Knowing God, Why we pray, ministry prayer, and Personal prayer to their stable IDs, exact positions, and approved configuration when the canonical journey is not running; preserve a running canonical journey.
+- KTD9. **Existing partial-journey availability:** Retain the accepted 20-90-minute availability range; the two 600-second Short Studies, 2,400-second ministry module, and final 600-second Personal prayer module total 70 minutes.
 
 ### High-Level Technical Design
 
@@ -232,8 +232,8 @@ stateDiagram-v2
 
 - Participant snapshots gain a second role-aware production module presentation without exposing unrelated rooms or source configuration beyond the current bundle.
 - Runtime progression, reassignment, takeover, reset, and polling extend their behavior dispatch while retaining one gathering revision and lock.
-- Production seed behavior changes the canonical ordered journey and performs a narrowly scoped correction to a row currently protected from ordinary running-config rewrites.
-- Journey validity continues to recognize structurally valid 20-90-minute partial journeys; the canonical sequence now totals 60 minutes.
+- Production seed behavior changes the canonical ordered journey when it is safe to reconcile and preserves an already-running canonical journey.
+- Journey validity continues to recognize structurally valid 20-90-minute partial journeys; the canonical sequence now totals 70 minutes.
 
 ### Risks and Mitigations
 
@@ -242,7 +242,7 @@ stateDiagram-v2
 - **Pair unfairness or impossible rooms:** Test one-, two-, odd-, and larger-member rooms with injectable randomness.
 - **Dual-timer confusion:** Keep both labels explicit, derive the bundle interval from the module duration, and test early/late advancement and refresh.
 - **Concurrent controls:** Reuse gathering serialization, expected state, and revision checks for both advance and targeted reassignment.
-- **Unsafe production rewrite:** Reconcile only the three stable canonical module identities in one transaction and preserve a different journey already attached to the gathering.
+- **Unsafe production rewrite:** Reconcile only the four stable canonical module identities in one transaction while preserving a running canonical journey and any different journey already attached to the gathering.
 
 ### Sequencing
 
@@ -336,18 +336,18 @@ stateDiagram-v2
 - **Files:** `src/lib/journey/ministry-prayer-seed.ts`, `src/lib/journey/seed.ts`, `src/lib/journey/seed.test.ts`, `src/lib/journey/service.ts`, `src/lib/journey/service.test.ts`, `prisma/seed-production.ts`, `CONTEXT.md`.
 - **Approach:**
   1. Transcribe pages 4-12 into coherent seed bundles without rewriting any heading or paragraph.
-  2. Add a stable ministry module ID at position one with a 2,400-second recommendation.
-  3. Reconcile the two stable Short Study rows at 600 seconds and create or update the stable ministry module at position two.
+  2. Add a stable ministry module ID at position two with a 2,400-second recommendation.
+  3. Reconcile the two stable Short Study rows at 600 seconds, the ministry module at position two, and Personal prayer at position three.
   4. Retain the accepted 20-90-minute journey availability range.
   5. Keep the seed atomic and repeatable for empty, existing, assigned, and running canonical databases.
 - **Patterns to follow:** Stable IDs, transactional upserts, running-canonical preservation, seed tests, and production database checks in `src/lib/journey/seed.ts`.
 - **Execution note:** Characterize existing running-canonical seed behavior before adding the targeted correction.
 - **Test scenarios:**
-  - Covers AE12. A fresh database receives Knowing God and Why we pray at 600 seconds each, followed by ministry prayer at 2,400 seconds with exact configuration.
+  - Covers AE12. A fresh database receives Knowing God and Why we pray at 600 seconds each, followed by ministry prayer at 2,400 seconds with exact configuration, then Personal prayer at 600 seconds.
   - Repeating the seed produces no duplicate journey or module rows.
-  - A running canonical journey reconciles the three stable modules without changing the active room state.
+  - A running canonical journey remains unchanged.
   - A running different journey remains attached and unchanged.
-  - Seeded configuration validates and makes the 3,600-second canonical journey available.
+  - Seeded configuration validates and makes the 4,200-second canonical journey available.
   - Representative headings and paragraphs from every page 4-12 section match the source exactly.
   - No staff-person section or devotional text appears in the fixture.
 - **Verification:** Seed tests, `pnpm db:seed`, and `pnpm db:check` confirm row order, IDs, durations, exact content, idempotency, and running-state safety.
@@ -374,7 +374,7 @@ stateDiagram-v2
 - Exact July pages 4-12 wording is stored in seed configuration and absent from reusable behavior/UI code.
 - Pair assignments include the Leader, remain visible to everyone, and support one-person replacement without reshuffling.
 - Overall and per-bundle countdowns remain synchronized, persistent, and advisory.
-- Knowing God and Why we pray remain 600 seconds each, ministry prayer is 2,400 seconds at position two, and the 60-minute canonical journey remains valid.
+- Knowing God and Why we pray remain 600 seconds each, ministry prayer is 2,400 seconds at position two, Personal prayer remains 600 seconds at position three, and the 70-minute canonical journey remains valid.
 - Seed behavior is atomic, idempotent, and preserves unrelated running configuration.
 - `pnpm db:check` and `pnpm verify` pass.
 - Browser acceptance passes on real Leader/member sessions at desktop and 390x844 mobile.

@@ -18,6 +18,7 @@ export function JoinForm({
   const [name, setName] = useState(initialName);
   const [request, setRequest] = useState("");
   const [error, setError] = useState("");
+  const [errorField, setErrorField] = useState<"name" | "request" | null>(null);
   const [isPending, setPending] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -26,10 +27,18 @@ export function JoinForm({
     const cleanName = name.trim().replace(/\s+/g, " ");
     if (!cleanName) {
       setError("Please enter your name so your room can recognise you.");
+      setErrorField("name");
+      return;
+    }
+
+    if (!request.trim()) {
+      setError("Please share something your group can pray for.");
+      setErrorField("request");
       return;
     }
 
     setError("");
+    setErrorField(null);
     setPending(true);
     try {
       const response = await fetchWithTimeout(endpoint, {
@@ -45,11 +54,13 @@ export function JoinForm({
       };
       if (!response.ok) {
         setError(result.error ?? "We couldn’t add you. Please try again.");
+        setErrorField(null);
         return;
       }
       onJoined(result);
     } catch {
       setError("We couldn’t reach the gathering. Please try again.");
+      setErrorField(null);
     } finally {
       setPending(false);
     }
@@ -75,12 +86,12 @@ export function JoinForm({
           value={name}
           maxLength={100}
           onChange={(event) => setName(event.target.value)}
-          aria-describedby={error ? "name-error" : undefined}
-          aria-invalid={Boolean(error)}
+          aria-describedby={errorField === "name" ? "name-error" : undefined}
+          aria-invalid={errorField === "name"}
           placeholder="How should we call you?"
           className="min-h-14 w-full rounded-xl border border-transparent bg-surface-muted px-5 text-lg text-ink placeholder:text-slate-500 transition focus:border-primary focus:bg-white focus:outline-none"
         />
-        {error ? (
+        {error && errorField !== "request" ? (
           <p id="name-error" role="alert" className="text-sm text-danger">
             {error}
           </p>
@@ -95,21 +106,40 @@ export function JoinForm({
           >
             Prayer request
           </label>
-          <span className="text-xs text-ink-muted">Optional</span>
+          <span className="text-xs text-ink-muted">Required</span>
         </div>
         <textarea
           id="prayer-request"
           name="request"
           rows={4}
+          required
           value={request}
           maxLength={2000}
           onChange={(event) => setRequest(event.target.value)}
+          aria-describedby={
+            errorField === "request"
+              ? "prayer-request-error prayer-request-privacy"
+              : "prayer-request-privacy"
+          }
+          aria-invalid={errorField === "request"}
           placeholder="What is on your heart today?"
           className="w-full resize-none rounded-xl border border-transparent bg-surface-muted px-5 py-4 text-base leading-6 text-ink placeholder:text-slate-500 transition focus:border-primary focus:bg-white focus:outline-none"
         />
-        <p className="flex items-center gap-2 text-sm text-ink-muted">
+        {errorField === "request" ? (
+          <p
+            id="prayer-request-error"
+            role="alert"
+            className="text-sm text-danger"
+          >
+            {error}
+          </p>
+        ) : null}
+        <p
+          id="prayer-request-privacy"
+          className="flex items-center gap-2 text-sm text-ink-muted"
+        >
           <LockKeyhole aria-hidden="true" className="size-4 text-primary" />
-          This will only be shared with your room later.
+          This will only be shared with your assigned prayer group.
         </p>
       </div>
 

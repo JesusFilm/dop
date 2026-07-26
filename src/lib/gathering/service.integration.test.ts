@@ -15,6 +15,7 @@ import {
 import {
   KNOWING_GOD_MODULE_ID,
   MINISTRY_PRAYER_MODULE_ID,
+  PERSONAL_PRAYER_MODULE_ID,
   PRODUCTION_JOURNEY_ID,
   SHORT_STUDY_MODULE_ID,
   seedProductionJourney,
@@ -146,6 +147,23 @@ describe("gathering lifecycle", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects a blank personal prayer request before assigning a room", async () => {
+    await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
+
+    await expect(
+      joinParticipant({
+        displayName: "Ana",
+        prayerRequest: "   ",
+        sessionTokenHash: "required-request".padStart(64, "0"),
+      }),
+    ).rejects.toMatchObject({
+      code: "PRAYER_REQUEST_REQUIRED",
+      message: "Enter a personal prayer request to join.",
+    });
+
+    expect(await getDatabase().participant.count()).toBe(0);
+  });
+
   it("joins, launches, takes over, accepts a late arrival, and resets", async () => {
     await seedRooms([
       {
@@ -272,22 +290,22 @@ describe("gathering lifecycle", () => {
     ]);
     await joinParticipant({
       displayName: "First leader",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "first-journey".padStart(64, "0"),
     });
     await joinParticipant({
       displayName: "Second leader",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "second-journey".padStart(64, "0"),
     });
     await joinParticipant({
       displayName: "Third leader",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "third-journey".padStart(64, "0"),
     });
     await joinParticipant({
       displayName: "Fourth participant",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "fourth-journey".padStart(64, "0"),
     });
 
@@ -369,7 +387,7 @@ describe("gathering lifecycle", () => {
     ).rejects.toMatchObject({ code: "LEADER_REQUIRED" });
     await joinParticipant({
       displayName: "Late participant",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "late-journey".padStart(64, "0"),
     });
     expect(
@@ -479,6 +497,14 @@ describe("gathering lifecycle", () => {
         recommendedSeconds: 2_400,
         configuration: JULY_MINISTRY_PRAYER_CONFIGURATION,
       },
+      {
+        id: PERSONAL_PRAYER_MODULE_ID,
+        position: 3,
+        behaviorKey: "personal-prayer",
+        title: "Personal prayer",
+        recommendedSeconds: 600,
+        configuration: {},
+      },
     ]);
 
     for (const [name, token] of [
@@ -488,7 +514,7 @@ describe("gathering lifecycle", () => {
     ] as const) {
       await joinParticipant({
         displayName: name,
-        prayerRequest: "",
+        prayerRequest: "Please pray for me.",
         sessionTokenHash: token.padStart(64, "0"),
       });
     }
@@ -807,62 +833,215 @@ describe("gathering lifecycle", () => {
         bundleStartedAt = current.journey.module.ministryPrayer.bundleStartedAt;
       }
     }
-    expect(current).toMatchObject({ journey: { state: "COMPLETED" } });
+    expect(current).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        expectedState: `${PERSONAL_PRAYER_MODULE_ID}:grouping`,
+        module: {
+          behaviorKey: "personal-prayer",
+          personalPrayer: {
+            phase: "grouping",
+            members: expect.arrayContaining([
+              expect.objectContaining({ name: "Ana" }),
+              expect.objectContaining({ name: "Ben" }),
+              expect.objectContaining({ name: "Chi" }),
+            ]),
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(current)).not.toContain("Please pray for me.");
+
+    await advanceRoomJourney({
+      sessionTokenHash: leaderToken,
+      expectedState:
+        current.state === "ROOM" && current.journey?.state === "ACTIVE"
+          ? current.journey.expectedState
+          : "",
+      expectedRevision: current.revision,
+    });
+    current = await getParticipantSnapshot(leaderToken);
+    expect(current).toMatchObject({
+      journey: {
+        expectedState: `${PERSONAL_PRAYER_MODULE_ID}:revealed`,
+        module: {
+          behaviorKey: "personal-prayer",
+          personalPrayer: {
+            phase: "revealed",
+            members: expect.arrayContaining([
+              expect.objectContaining({
+                name: "Ana",
+                request: "Please pray for me.",
+              }),
+              expect.objectContaining({
+                name: "Ben",
+                request: "Please pray for me.",
+              }),
+              expect.objectContaining({
+                name: "Chi",
+                request: "Please pray for me.",
+              }),
+            ]),
+          },
+        },
+      },
+    });
+
+    await advanceRoomJourney({
+      sessionTokenHash: leaderToken,
+      expectedState:
+        current.state === "ROOM" && current.journey?.state === "ACTIVE"
+          ? current.journey.expectedState
+          : "",
+      expectedRevision: current.revision,
+    });
+    expect(await getParticipantSnapshot(leaderToken)).toMatchObject({
+      journey: { state: "COMPLETED" },
+    });
   });
 
-  it("reconciles the canonical module sequence while it is running", async () => {
+  it("reveals requests only inside persisted prayer groups and appends late arrivals", async () => {
     await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
     await seedProductionJourney(getDatabase());
-    await joinParticipant({
-      displayName: "Ana",
-      prayerRequest: "",
-      sessionTokenHash: "running-canonical".padStart(64, "0"),
-    });
+    const tokens = Array.from({ length: 5 }, (_, index) =>
+      `prayer-${index + 1}`.padStart(64, "0"),
+    );
+    for (const [index, token] of tokens.entries()) {
+      await joinParticipant({
+        displayName: `Participant ${index + 1}`,
+        prayerRequest: `Private request ${index + 1}`,
+        sessionTokenHash: token,
+      });
+    }
     await launchGathering();
-    await getDatabase().journeyModule.update({
-      where: { id: SHORT_STUDY_MODULE_ID },
-      data: { recommendedSeconds: 3_600 },
+
+    const room = await getDatabase().room.findFirstOrThrow({
+      where: { gatheringId: ACTIVE_GATHERING_ID },
+      select: {
+        id: true,
+        journeyRuntime: { select: { id: true } },
+        participants: {
+          orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+          select: { id: true },
+        },
+      },
     });
-    await getDatabase().journeyModule.update({
-      where: { id: MINISTRY_PRAYER_MODULE_ID },
-      data: { title: "Preserve this running title" },
+    const participantIds = room.participants.map(({ id }) => id);
+    await getDatabase().participant.update({
+      where: { id: participantIds[1] },
+      data: {
+        prayerCiphertext: null,
+        prayerIv: null,
+        prayerAuthTag: null,
+      },
+    });
+    await getDatabase().roomJourney.update({
+      where: { id: room.journeyRuntime!.id },
+      data: {
+        currentModuleId: PERSONAL_PRAYER_MODULE_ID,
+        moduleStartedAt: new Date(),
+        moduleState: {
+          phase: "grouping",
+          groups: [participantIds.slice(0, 3), participantIds.slice(3)],
+        },
+      },
     });
 
-    expect(await seedProductionJourney(getDatabase())).toBe("attached");
-    expect(
-      await getDatabase().journeyModule.findMany({
-        where: { journeyId: PRODUCTION_JOURNEY_ID },
-        orderBy: { position: "asc" },
-        select: { id: true, recommendedSeconds: true, title: true },
-      }),
-    ).toEqual([
-      {
-        id: KNOWING_GOD_MODULE_ID,
-        recommendedSeconds: 600,
-        title: "Knowing God",
+    let leader = await getParticipantSnapshot(tokens[0]);
+    expect(leader).toMatchObject({
+      journey: {
+        expectedState: `${PERSONAL_PRAYER_MODULE_ID}:grouping`,
+        module: {
+          personalPrayer: {
+            phase: "grouping",
+            members: [
+              { name: "Participant 1" },
+              { name: "Participant 2" },
+              { name: "Participant 3" },
+            ],
+          },
+        },
       },
-      {
-        id: SHORT_STUDY_MODULE_ID,
-        recommendedSeconds: 600,
-        title: "Why we pray",
-      },
-      {
-        id: MINISTRY_PRAYER_MODULE_ID,
-        recommendedSeconds: 2_400,
-        title: "Pray for our ministries",
-      },
-    ]);
-
-    await getDatabase().journeyModule.delete({
-      where: { id: MINISTRY_PRAYER_MODULE_ID },
     });
-    expect(await seedProductionJourney(getDatabase())).toBe("attached");
-    expect(
-      await getDatabase().journeyModule.findUnique({
-        where: { id: MINISTRY_PRAYER_MODULE_ID },
-        select: { recommendedSeconds: true },
-      }),
-    ).toEqual({ recommendedSeconds: 2_400 });
+    expect(JSON.stringify(leader)).not.toContain("Private request");
+
+    await takeOverLeader({
+      sessionTokenHash: tokens[1],
+      expectedRevision: leader.revision,
+    });
+    leader = await getParticipantSnapshot(tokens[1]);
+    expect(leader).toMatchObject({
+      journey: {
+        expectedState: `${PERSONAL_PRAYER_MODULE_ID}:grouping`,
+        module: { personalPrayer: { phase: "grouping" } },
+      },
+    });
+
+    await advanceRoomJourney({
+      sessionTokenHash: tokens[1],
+      expectedState:
+        leader.state === "ROOM" && leader.journey?.state === "ACTIVE"
+          ? leader.journey.expectedState
+          : "",
+      expectedRevision: leader.revision,
+    });
+    leader = await getParticipantSnapshot(tokens[0]);
+    expect(leader).toMatchObject({
+      journey: {
+        expectedState: `${PERSONAL_PRAYER_MODULE_ID}:revealed`,
+        module: {
+          personalPrayer: {
+            members: [
+              { name: "Participant 1", request: "Private request 1" },
+              { name: "Participant 2", request: null },
+              { name: "Participant 3", request: "Private request 3" },
+            ],
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(leader)).not.toContain("Private request 4");
+    expect(JSON.stringify(leader)).not.toContain("Private request 5");
+    expect(JSON.stringify(await getOrganizerSnapshot())).not.toContain(
+      "Private request",
+    );
+
+    const lateToken = "prayer-late".padStart(64, "0");
+    await joinParticipant({
+      displayName: "Late Participant",
+      prayerRequest: "Late private request",
+      sessionTokenHash: lateToken,
+    });
+    const late = await getParticipantSnapshot(lateToken);
+    expect(late).toMatchObject({
+      journey: {
+        expectedState: `${PERSONAL_PRAYER_MODULE_ID}:revealed`,
+        module: {
+          personalPrayer: {
+            members: [
+              { name: "Participant 4", request: "Private request 4" },
+              { name: "Participant 5", request: "Private request 5" },
+              { name: "Late Participant", request: "Late private request" },
+            ],
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(late)).not.toContain("Private request 1");
+
+    const activeLeader = await getParticipantSnapshot(tokens[1]);
+    await advanceRoomJourney({
+      sessionTokenHash: tokens[1],
+      expectedState:
+        activeLeader.state === "ROOM" &&
+        activeLeader.journey?.state === "ACTIVE"
+          ? activeLeader.journey.expectedState
+          : "",
+      expectedRevision: activeLeader.revision,
+    });
+    const completed = await getParticipantSnapshot(tokens[1]);
+    expect(completed).toMatchObject({ journey: { state: "COMPLETED" } });
+    expect(JSON.stringify(completed)).not.toContain("Private request");
   });
 
   it("preserves running journeys while activating the production seed when safe", async () => {
@@ -870,7 +1049,7 @@ describe("gathering lifecycle", () => {
     await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
     await joinParticipant({
       displayName: "Ana",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "seed-other".padStart(64, "0"),
     });
 
@@ -900,7 +1079,7 @@ describe("gathering lifecycle", () => {
     await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
     await joinParticipant({
       displayName: "Ben",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "seed-missing".padStart(64, "0"),
     });
     await launchGathering();
@@ -929,13 +1108,13 @@ describe("gathering lifecycle", () => {
     ]);
     await joinParticipant({
       displayName: "Initial Participant",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "initial".padStart(64, "0"),
     });
     await launchGathering();
     await joinParticipant({
       displayName: "Late Leader",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "late-leader".padStart(64, "0"),
     });
 
@@ -961,12 +1140,12 @@ describe("gathering lifecycle", () => {
     ]);
     await joinParticipant({
       displayName: "First Participant",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "first".padStart(64, "0"),
     });
     await joinParticipant({
       displayName: "Second Participant",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "second".padStart(64, "0"),
     });
     await getDatabase().room.updateMany({
@@ -975,7 +1154,7 @@ describe("gathering lifecycle", () => {
     });
     await joinParticipant({
       displayName: "Post-rollout Participant",
-      prayerRequest: "",
+      prayerRequest: "Please pray for me.",
       sessionTokenHash: "post-rollout".padStart(64, "0"),
     });
 
@@ -995,7 +1174,7 @@ describe("gathering lifecycle", () => {
       Array.from({ length: 12 }, (_, index) =>
         joinParticipant({
           displayName: `Concurrent ${index + 1}`,
-          prayerRequest: "",
+          prayerRequest: "Please pray for me.",
           sessionTokenHash: `concurrent-${index}`.padStart(64, "0"),
         }),
       ),
@@ -1026,7 +1205,7 @@ describe("gathering lifecycle", () => {
     await expect(
       joinParticipant({
         displayName: "Waiting Participant",
-        prayerRequest: "",
+        prayerRequest: "Please pray for me.",
         sessionTokenHash: "waiting".padStart(64, "0"),
       }),
     ).rejects.toMatchObject({ code: "ROOM_CONFIGURATION_INVALID" });

@@ -45,6 +45,9 @@ export function ModuleShell({
   const viewerIsLeader = snapshot.room.members.some(
     ({ id, isLeader }) => id === snapshot.participant.id && isLeader,
   );
+  const isPersonalPrayerGrouping =
+    journey.module.behaviorKey === "personal-prayer" &&
+    journey.module.personalPrayer.phase === "grouping";
 
   async function confirmTakeover() {
     setTakeoverPending(true);
@@ -114,7 +117,13 @@ export function ModuleShell({
                 You control when the room continues
               </p>
               <ActionButton onClick={onAdvance} disabled={isPending}>
-                {isPending ? "Continuing…" : "Continue"}
+                {isPending
+                  ? isPersonalPrayerGrouping
+                    ? "Revealing…"
+                    : "Continuing…"
+                  : isPersonalPrayerGrouping
+                    ? "Reveal prayer requests"
+                    : "Continue"}
                 <ArrowRight aria-hidden="true" className="size-5" />
               </ActionButton>
               {journey.module.behaviorKey === "short-study" &&

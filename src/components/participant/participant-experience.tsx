@@ -195,17 +195,22 @@ export function ParticipantExperience({
           <ParticipantHeader
             homeHref={homeHref}
             trailing={
-              <Countdown
-                startedAt={snapshot.journey.module.startedAt}
-                recommendedSeconds={snapshot.journey.module.recommendedSeconds}
-                serverTime={snapshot.journey.module.serverTime}
-                compact
-                label={
-                  snapshot.journey.module.behaviorKey === "ministry-prayer"
-                    ? "Overall:"
-                    : undefined
-                }
-              />
+              snapshot.journey.module.behaviorKey !== "personal-prayer" ||
+              snapshot.journey.module.personalPrayer.phase !== "grouping" ? (
+                <Countdown
+                  startedAt={snapshot.journey.module.startedAt}
+                  recommendedSeconds={
+                    snapshot.journey.module.recommendedSeconds
+                  }
+                  serverTime={snapshot.journey.module.serverTime}
+                  compact
+                  label={
+                    snapshot.journey.module.behaviorKey === "ministry-prayer"
+                      ? "Overall:"
+                      : undefined
+                  }
+                />
+              ) : null
             }
           />
           <ModuleShell

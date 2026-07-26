@@ -14,7 +14,7 @@ export function ParticipantTester() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-ink-muted">
             Join and follow the gathering as six independent participants. Names
-            are pre-filled but remain editable.
+            are pre-filled; each participant still enters a prayer request.
           </p>
         </div>
 
