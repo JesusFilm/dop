@@ -12,11 +12,38 @@ import {
   takeOverLeader,
 } from "@/lib/gathering/service";
 import {
+  KNOWING_GOD_MODULE_ID,
   PRODUCTION_JOURNEY_ID,
-  SHORT_STUDY_CONFIGURATION,
   SHORT_STUDY_MODULE_ID,
   seedProductionJourney,
 } from "@/lib/journey/seed";
+
+const EXPECTED_KNOWING_GOD_CONFIGURATION = {
+  passageReference: "Ephesians 1:15–23",
+  scriptureText:
+    "15 For this reason, ever since I heard about your faith in the Lord Jesus and your love for all the saints,\n\n16 I have not stopped giving thanks for you, remembering you in my prayers,\n\n17 that the God of our Lord Jesus Christ, the glorious Father, may give you a spirit of wisdom and revelation in your knowledge of Him.\n\n18 I ask that the eyes of your heart may be enlightened, so that you may know the hope of His calling, the riches of His glorious inheritance in the saints,\n\n19 and the surpassing greatness of His power to us who believe. These are in accordance with the working of His mighty strength,\n\n20 which He exerted in Christ when He raised Him from the dead and seated Him at His right hand in the heavenly realms,\n\n21 far above all rule and authority, power and dominion, and every name that is named, not only in the present age but also in the one to come.\n\n22 And God put everything under His feet and made Him head over everything for the church,\n\n23 which is His body, the fullness of Him who fills all in all.",
+  translation: "Berean Standard Bible (BSB)",
+  reflections: [
+    "Knowing Christ: Paul prays that God would give us wisdom and revelation so that we may know Him—not merely know facts about Him, but know Christ personally and be transformed by Him.",
+    "Enlightened hearts: When God enlightens the eyes of our hearts, we begin to grasp the hope of His calling, the riches of His inheritance, and the surpassing greatness of His power toward those who believe.",
+    "Confident hope: Christian hope is confident expectation that God will fulfill every promise in Christ. We will receive our inheritance, be united with the Lord, and one day be free from sin, pain, sickness, and struggle.",
+  ],
+  discussionQuestion: "What would it look like for us to pray like Paul today?",
+};
+
+const EXPECTED_WHY_WE_PRAY_CONFIGURATION = {
+  passageReference: "Hebrews 4:14–16",
+  scriptureText:
+    "14 Therefore, since we have a great high priest who has passed through the heavens, Jesus the Son of God, let us hold firmly to what we profess.\n\n15 For we do not have a high priest who is unable to sympathize with our weaknesses, but One who was tempted in every way that we are, yet was without sin.\n\n16 Let us then approach the throne of grace with confidence, so that we may receive mercy and find grace to help us in our time of need.",
+  translation: "Berean Standard Bible (BSB)",
+  reflections: [
+    "Jesus understands our weakness. Prayer does not require us to pretend that we are stronger or more spiritual than we are.",
+    "Jesus gives us confident access to God. We approach because of Christ, not because of how well we pray.",
+    "God offers mercy, grace, and timely help. We can bring our real needs to a God who welcomes and helps us.",
+  ],
+  discussionQuestion:
+    "How should knowing that God welcomes us with mercy and grace shape the way we pray today?",
+};
 
 async function clearGathering() {
   const database = getDatabase();
@@ -412,21 +439,36 @@ describe("gathering lifecycle", () => {
       }),
     ).toEqual({ journeyId: PRODUCTION_JOURNEY_ID });
     expect(
-      await getDatabase().journeyModule.findUnique({
-        where: { id: SHORT_STUDY_MODULE_ID },
+      await getDatabase().journeyModule.findMany({
+        where: { journeyId: PRODUCTION_JOURNEY_ID },
+        orderBy: { position: "asc" },
         select: {
+          id: true,
+          position: true,
           behaviorKey: true,
           title: true,
           recommendedSeconds: true,
           configuration: true,
         },
       }),
-    ).toEqual({
-      behaviorKey: "short-study",
-      title: "Why we pray",
-      recommendedSeconds: 3_600,
-      configuration: SHORT_STUDY_CONFIGURATION,
-    });
+    ).toEqual([
+      {
+        id: KNOWING_GOD_MODULE_ID,
+        position: 0,
+        behaviorKey: "short-study",
+        title: "Knowing God",
+        recommendedSeconds: 600,
+        configuration: EXPECTED_KNOWING_GOD_CONFIGURATION,
+      },
+      {
+        id: SHORT_STUDY_MODULE_ID,
+        position: 1,
+        behaviorKey: "short-study",
+        title: "Why we pray",
+        recommendedSeconds: 600,
+        configuration: EXPECTED_WHY_WE_PRAY_CONFIGURATION,
+      },
+    ]);
 
     for (const [name, token] of [
       ["Ana", "short-ana"],
@@ -457,11 +499,17 @@ describe("gathering lifecycle", () => {
     expect(active).toMatchObject({
       journey: {
         state: "ACTIVE",
-        expectedState: `${SHORT_STUDY_MODULE_ID}:0`,
+        expectedState: `${KNOWING_GOD_MODULE_ID}:0`,
         module: {
+          id: KNOWING_GOD_MODULE_ID,
+          title: "Knowing God",
+          recommendedSeconds: 600,
           behaviorKey: "short-study",
           shortStudy: {
-            contribution: { kind: "passage" },
+            contribution: {
+              kind: "passage",
+              label: "Ephesians 1:15–23",
+            },
             viewerRole: "leader",
           },
         },
@@ -534,11 +582,57 @@ describe("gathering lifecycle", () => {
       expectedRevision: active.revision,
     });
     expect(await getParticipantSnapshot(leaderToken)).toMatchObject({
-      journey: { expectedState: `${SHORT_STUDY_MODULE_ID}:0` },
+      journey: { expectedState: `${KNOWING_GOD_MODULE_ID}:0` },
     });
 
     let current: Awaited<ReturnType<typeof getParticipantSnapshot>> =
       afterStudyTakeover;
+    for (let index = 1; index <= 4; index += 1) {
+      await advanceRoomJourney({
+        sessionTokenHash: leaderToken,
+        expectedState:
+          current.state === "ROOM" && current.journey?.state === "ACTIVE"
+            ? current.journey.expectedState
+            : "",
+        expectedRevision: current.revision,
+      });
+      current = await getParticipantSnapshot(leaderToken);
+      expect(current).toMatchObject({
+        journey: { expectedState: `${KNOWING_GOD_MODULE_ID}:${index}` },
+      });
+    }
+
+    const overwrittenModuleStartedAt = "2026-01-01T00:00:00.000Z";
+    await getDatabase().roomJourney.updateMany({
+      where: { journeyId: PRODUCTION_JOURNEY_ID },
+      data: { moduleStartedAt: new Date(overwrittenModuleStartedAt) },
+    });
+    await advanceRoomJourney({
+      sessionTokenHash: leaderToken,
+      expectedState:
+        current.state === "ROOM" && current.journey?.state === "ACTIVE"
+          ? current.journey.expectedState
+          : "",
+      expectedRevision: current.revision,
+    });
+    current = await getParticipantSnapshot(leaderToken);
+    expect(current).toMatchObject({
+      journey: {
+        expectedState: `${SHORT_STUDY_MODULE_ID}:0`,
+        module: {
+          id: SHORT_STUDY_MODULE_ID,
+          title: "Why we pray",
+          recommendedSeconds: 600,
+          shortStudy: { contribution: { kind: "passage" } },
+        },
+      },
+    });
+    expect(
+      current.state === "ROOM" && current.journey?.state === "ACTIVE"
+        ? current.journey.module.startedAt
+        : "",
+    ).not.toBe(overwrittenModuleStartedAt);
+
     for (let index = 1; index <= 5; index += 1) {
       await advanceRoomJourney({
         sessionTokenHash: leaderToken,
