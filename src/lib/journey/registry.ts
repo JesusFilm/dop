@@ -4,8 +4,12 @@ import type {
   JourneyModuleDefinition,
 } from "@/lib/journey/types";
 import { validateShortStudyConfiguration } from "@/lib/journey/short-study";
+import { validateMinistryPrayerConfiguration } from "@/lib/journey/ministry-prayer";
 
-const productionModuleKeys: readonly JourneyBehaviorKey[] = ["short-study"];
+const productionModuleKeys: readonly JourneyBehaviorKey[] = [
+  "short-study",
+  "ministry-prayer",
+];
 
 const moduleDefinitions: {
   [Key in JourneyBehaviorKey]: JourneyModuleDefinition<Key>;
@@ -24,6 +28,9 @@ const moduleDefinitions: {
   },
   "short-study": {
     validateConfiguration: validateShortStudyConfiguration,
+  },
+  "ministry-prayer": {
+    validateConfiguration: validateMinistryPrayerConfiguration,
   },
 };
 

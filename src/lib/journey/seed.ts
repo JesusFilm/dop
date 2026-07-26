@@ -1,8 +1,17 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { ACTIVE_GATHERING_ID } from "@/lib/gathering/constants";
+import {
+  MINISTRY_PRAYER_MODULE_ID,
+  PRODUCTION_JOURNEY_ID,
+  SHORT_STUDY_MODULE_ID,
+} from "@/lib/journey/constants";
+import { JULY_MINISTRY_PRAYER_CONFIGURATION } from "@/lib/journey/ministry-prayer-seed";
 
-export const PRODUCTION_JOURNEY_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a001";
-export const SHORT_STUDY_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a002";
+export {
+  MINISTRY_PRAYER_MODULE_ID,
+  PRODUCTION_JOURNEY_ID,
+  SHORT_STUDY_MODULE_ID,
+};
 
 export const SHORT_STUDY_CONFIGURATION = {
   passageReference: "Hebrews 4:14–16",
@@ -52,26 +61,48 @@ export async function seedProductionJourney(
       update: runningCanonicalJourney ? {} : { name: "Day of Prayer" },
     });
 
+    const shortStudyModule = {
+      id: SHORT_STUDY_MODULE_ID,
+      journeyId: PRODUCTION_JOURNEY_ID,
+      position: 0,
+      behaviorKey: "short-study",
+      title: "Why we pray",
+      recommendedSeconds: 600,
+      configuration: SHORT_STUDY_CONFIGURATION,
+    } as const;
+    const ministryPrayerModule = {
+      id: MINISTRY_PRAYER_MODULE_ID,
+      journeyId: PRODUCTION_JOURNEY_ID,
+      position: 1,
+      behaviorKey: "ministry-prayer",
+      title: "Pray for our ministries",
+      recommendedSeconds: 2_400,
+      configuration: JULY_MINISTRY_PRAYER_CONFIGURATION,
+    } as const;
+
     if (!runningCanonicalJourney) {
       await transaction.journeyModule.upsert({
         where: { id: SHORT_STUDY_MODULE_ID },
-        create: {
+        create: shortStudyModule,
+        update: shortStudyModule,
+      });
+      await transaction.journeyModule.upsert({
+        where: { id: MINISTRY_PRAYER_MODULE_ID },
+        create: ministryPrayerModule,
+        update: ministryPrayerModule,
+      });
+    } else {
+      await transaction.journeyModule.updateMany({
+        where: {
           id: SHORT_STUDY_MODULE_ID,
           journeyId: PRODUCTION_JOURNEY_ID,
-          position: 0,
-          behaviorKey: "short-study",
-          title: "Why we pray",
           recommendedSeconds: 3_600,
-          configuration: SHORT_STUDY_CONFIGURATION,
         },
-        update: {
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 0,
-          behaviorKey: "short-study",
-          title: "Why we pray",
-          recommendedSeconds: 3_600,
-          configuration: SHORT_STUDY_CONFIGURATION,
-        },
+        data: { recommendedSeconds: 600 },
+      });
+      await transaction.journeyModule.createMany({
+        data: [shortStudyModule, ministryPrayerModule],
+        skipDuplicates: true,
       });
     }
 

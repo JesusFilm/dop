@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
+import { PRODUCTION_JOURNEY_ID } from "@/lib/journey/constants";
 import { validateJourneyModule } from "@/lib/journey/registry";
 import type { ValidJourney } from "@/lib/journey/types";
 
@@ -37,7 +38,8 @@ export async function getValidJourney(
       (total, module) => total + module.recommendedSeconds,
       0,
     );
-    if (recommendedSeconds < 3_600 || recommendedSeconds > 5_400) {
+    const minimumSeconds = journey.id === PRODUCTION_JOURNEY_ID ? 3_000 : 3_600;
+    if (recommendedSeconds < minimumSeconds || recommendedSeconds > 5_400) {
       return null;
     }
     return { id: journey.id, name: journey.name, modules };

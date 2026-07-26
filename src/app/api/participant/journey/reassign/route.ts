@@ -10,7 +10,7 @@ import { participantCookieName } from "@/lib/gathering/participant-session";
 import { hashSessionToken } from "@/lib/gathering/session";
 import {
   getParticipantSnapshot,
-  reassignShortStudyReader,
+  reassignJourneyParticipant,
 } from "@/lib/gathering/service";
 
 export async function POST(request: Request) {
@@ -26,6 +26,10 @@ export async function POST(request: Request) {
       Number.isSafeInteger(body.expectedRevision)
         ? body.expectedRevision
         : -1;
+    const targetParticipantId =
+      typeof body.targetParticipantId === "string"
+        ? body.targetParticipantId.trim().slice(0, 100)
+        : undefined;
     if (!expectedState) {
       throw new GatheringError(
         "The current activity state is required.",
@@ -49,10 +53,11 @@ export async function POST(request: Request) {
       );
     }
     const tokenHash = hashSessionToken(token);
-    const result = await reassignShortStudyReader({
+    const result = await reassignJourneyParticipant({
       sessionTokenHash: tokenHash,
       expectedState,
       expectedRevision,
+      ...(targetParticipantId ? { targetParticipantId } : {}),
     });
     return NextResponse.json(
       {

@@ -9,11 +9,13 @@ export function Countdown({
   recommendedSeconds,
   serverTime,
   compact = false,
+  label,
 }: {
   startedAt: string;
   recommendedSeconds: number;
   serverTime: string;
   compact?: boolean;
+  label?: string;
 }) {
   const [countdown, setCountdown] = useState(() =>
     getJourneyCountdown(startedAt, recommendedSeconds, Date.parse(serverTime)),
@@ -61,6 +63,7 @@ export function Countdown({
       }
     >
       <Clock3 aria-hidden="true" className={compact ? "size-4" : "size-5"} />
+      {label ? <span>{label}</span> : null}
       {compact && countdown.elapsed ? "Time reached" : countdown.label}
     </div>
   );

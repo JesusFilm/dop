@@ -2,10 +2,15 @@ import type {
   ShortStudyConfiguration,
   ShortStudyContribution,
 } from "@/lib/journey/short-study";
+import type {
+  MinistryPrayerBundle,
+  MinistryPrayerConfiguration,
+} from "@/lib/journey/ministry-prayer";
 
 export type JourneyModulePayloads = {
   "test-guided-prayer": { prompt: string };
   "short-study": ShortStudyConfiguration;
+  "ministry-prayer": MinistryPrayerConfiguration;
 };
 
 export type JourneyBehaviorKey = keyof JourneyModulePayloads;
@@ -45,10 +50,26 @@ export type ShortStudyPresentation = {
   canReassign: boolean;
 };
 
+export type MinistryPrayerPresentation = {
+  bundle: MinistryPrayerBundle;
+  bundleNumber: number;
+  bundleCount: number;
+  assignees: { id: string; name: string }[];
+  viewerRole: "leader" | "assigned" | "member";
+  canReassign: boolean;
+  bundleStartedAt: string;
+  bundleRecommendedSeconds: number;
+};
+
 export type PresentedJourneyModule =
   | Extract<JourneyClientModule, { behaviorKey: "test-guided-prayer" }>
   | {
       behaviorKey: "short-study";
       configuration: { translation: string };
       shortStudy: ShortStudyPresentation;
+    }
+  | {
+      behaviorKey: "ministry-prayer";
+      configuration: { bundlesPerRoom: number };
+      ministryPrayer: MinistryPrayerPresentation;
     };

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@/generated/prisma/client";
+import { PRODUCTION_JOURNEY_ID } from "@/lib/journey/constants";
 import { getValidJourney } from "@/lib/journey/service";
 
 function databaseWithModules(
@@ -10,11 +11,12 @@ function databaseWithModules(
     behaviorKey?: string;
     configuration?: unknown;
   }[],
+  journeyId = "00000000-0000-0000-0000-000000000001",
 ) {
   return {
     journey: {
       findUnique: vi.fn().mockResolvedValue({
-        id: "00000000-0000-0000-0000-000000000001",
+        id: journeyId,
         name: "Test journey",
         modules: modules.map((module, index) => ({
           id: module.id ?? `00000000-0000-0000-0000-00000000000${index + 2}`,
@@ -36,7 +38,7 @@ describe("journey validation", () => {
   it.each([
     { minutes: 60, available: true },
     { minutes: 90, available: true },
-    { minutes: 59, available: false },
+    { minutes: 50, available: false },
     { minutes: 91, available: false },
   ])(
     "treats a $minutes-minute journey availability as $available",
@@ -55,6 +57,19 @@ describe("journey validation", () => {
       expect(journey !== null).toBe(available);
     },
   );
+
+  it("accepts the canonical partial journey at 50 minutes", async () => {
+    process.env.JOURNEY_TEST_MODULES = "enabled";
+    await expect(
+      getValidJourney(
+        databaseWithModules(
+          [{ position: 0, recommendedSeconds: 3_000 }],
+          PRODUCTION_JOURNEY_ID,
+        ),
+        PRODUCTION_JOURNEY_ID,
+      ),
+    ).resolves.not.toBeNull();
+  });
 
   it.each([
     {

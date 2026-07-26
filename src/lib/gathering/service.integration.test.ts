@@ -7,16 +7,19 @@ import {
   getParticipantSnapshot,
   joinParticipant,
   launchGathering,
+  reassignJourneyParticipant,
   reassignShortStudyReader,
   resetGathering,
   takeOverLeader,
 } from "@/lib/gathering/service";
 import {
+  MINISTRY_PRAYER_MODULE_ID,
   PRODUCTION_JOURNEY_ID,
   SHORT_STUDY_CONFIGURATION,
   SHORT_STUDY_MODULE_ID,
   seedProductionJourney,
 } from "@/lib/journey/seed";
+import { JULY_MINISTRY_PRAYER_CONFIGURATION } from "@/lib/journey/ministry-prayer-seed";
 
 async function clearGathering() {
   const database = getDatabase();
@@ -401,7 +404,7 @@ describe("gathering lifecycle", () => {
     expect(await getDatabase().roomJourney.count()).toBe(0);
   });
 
-  it("seeds and synchronizes the production Short Study contribution by contribution", async () => {
+  it("seeds and synchronizes the production journey contribution and bundle at a time", async () => {
     await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
     expect(await seedProductionJourney(getDatabase())).toBe("attached");
     expect(await seedProductionJourney(getDatabase())).toBe("attached");
@@ -424,8 +427,24 @@ describe("gathering lifecycle", () => {
     ).toEqual({
       behaviorKey: "short-study",
       title: "Why we pray",
-      recommendedSeconds: 3_600,
+      recommendedSeconds: 600,
       configuration: SHORT_STUDY_CONFIGURATION,
+    });
+    expect(
+      await getDatabase().journeyModule.findUnique({
+        where: { id: MINISTRY_PRAYER_MODULE_ID },
+        select: {
+          position: true,
+          behaviorKey: true,
+          recommendedSeconds: true,
+          configuration: true,
+        },
+      }),
+    ).toEqual({
+      position: 1,
+      behaviorKey: "ministry-prayer",
+      recommendedSeconds: 2_400,
+      configuration: JULY_MINISTRY_PRAYER_CONFIGURATION,
     });
 
     for (const [name, token] of [
@@ -555,7 +574,204 @@ describe("gathering lifecycle", () => {
         });
       }
     }
+    expect(current).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        expectedState: `${MINISTRY_PRAYER_MODULE_ID}:0`,
+        module: {
+          behaviorKey: "ministry-prayer",
+          recommendedSeconds: 2_400,
+          ministryPrayer: {
+            bundleNumber: 1,
+            bundleCount: 5,
+            viewerRole: "leader",
+            bundleRecommendedSeconds: 480,
+          },
+        },
+      },
+    });
+    if (
+      current.state !== "ROOM" ||
+      current.journey?.state !== "ACTIVE" ||
+      current.journey.module.behaviorKey !== "ministry-prayer"
+    ) {
+      throw new Error("Expected active ministry prayer");
+    }
+    const beforeReassign = current.journey.module.ministryPrayer;
+    expect(beforeReassign.assignees).toHaveLength(2);
+    const target = beforeReassign.assignees[0];
+    expect(target).toBeDefined();
+    expect(
+      await reassignJourneyParticipant({
+        sessionTokenHash: leaderToken,
+        expectedState: current.journey.expectedState,
+        expectedRevision: current.revision,
+        targetParticipantId: target!.id,
+      }),
+    ).toBe("changed");
+    current = await getParticipantSnapshot(leaderToken);
+    if (
+      current.state !== "ROOM" ||
+      current.journey?.state !== "ACTIVE" ||
+      current.journey.module.behaviorKey !== "ministry-prayer"
+    ) {
+      throw new Error("Expected reassigned ministry prayer");
+    }
+    expect(
+      current.journey.module.ministryPrayer.assignees.map(({ id }) => id),
+    ).not.toContain(target!.id);
+    const moduleStartedAt = current.journey.module.startedAt;
+    let bundleStartedAt = current.journey.module.ministryPrayer.bundleStartedAt;
+    const ministryStateBeforeTakeover = current.journey.module.ministryPrayer;
+    const nextLeader = current.room.members.find(({ isLeader }) => !isLeader);
+    expect(nextLeader).toBeDefined();
+    const nextLeaderToken =
+      nextLeader?.name === "Ana"
+        ? "short-ana".padStart(64, "0")
+        : nextLeader?.name === "Ben"
+          ? "short-ben".padStart(64, "0")
+          : "short-chi".padStart(64, "0");
+    await takeOverLeader({
+      sessionTokenHash: nextLeaderToken,
+      expectedRevision: current.revision,
+    });
+    current = await getParticipantSnapshot(nextLeaderToken);
+    expect(current).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        expectedState: `${MINISTRY_PRAYER_MODULE_ID}:0`,
+        module: {
+          startedAt: moduleStartedAt,
+          ministryPrayer: ministryStateBeforeTakeover,
+        },
+      },
+    });
+    if (
+      current.state !== "ROOM" ||
+      current.journey?.state !== "ACTIVE" ||
+      current.journey.module.behaviorKey !== "ministry-prayer"
+    ) {
+      throw new Error("Expected takeover to preserve ministry prayer");
+    }
+    leaderToken = nextLeaderToken;
+
+    const duplicateAdvance = {
+      sessionTokenHash: leaderToken,
+      expectedState: current.journey.expectedState,
+      expectedRevision: current.revision,
+    };
+    await Promise.all([
+      advanceRoomJourney(duplicateAdvance),
+      advanceRoomJourney(duplicateAdvance),
+    ]);
+    current = await getParticipantSnapshot(leaderToken);
+    expect(current).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        expectedState: `${MINISTRY_PRAYER_MODULE_ID}:1`,
+        module: {
+          startedAt: moduleStartedAt,
+          ministryPrayer: { bundleNumber: 2 },
+        },
+      },
+    });
+    if (
+      current.state !== "ROOM" ||
+      current.journey?.state !== "ACTIVE" ||
+      current.journey.module.behaviorKey !== "ministry-prayer"
+    ) {
+      throw new Error("Expected one ministry prayer advance");
+    }
+    expect(
+      Date.parse(current.journey.module.ministryPrayer.bundleStartedAt),
+    ).toBeGreaterThanOrEqual(Date.parse(bundleStartedAt));
+    bundleStartedAt = current.journey.module.ministryPrayer.bundleStartedAt;
+
+    for (let index = 2; index <= 5; index += 1) {
+      await advanceRoomJourney({
+        sessionTokenHash: leaderToken,
+        expectedState:
+          current.state === "ROOM" && current.journey?.state === "ACTIVE"
+            ? current.journey.expectedState
+            : "",
+        expectedRevision: current.revision,
+      });
+      current = await getParticipantSnapshot(leaderToken);
+      if (index < 5) {
+        expect(current).toMatchObject({
+          journey: {
+            state: "ACTIVE",
+            expectedState: `${MINISTRY_PRAYER_MODULE_ID}:${index}`,
+            module: {
+              startedAt: moduleStartedAt,
+              ministryPrayer: { bundleNumber: index + 1 },
+            },
+          },
+        });
+        if (
+          current.state !== "ROOM" ||
+          current.journey?.state !== "ACTIVE" ||
+          current.journey.module.behaviorKey !== "ministry-prayer"
+        ) {
+          throw new Error("Expected next ministry prayer bundle");
+        }
+        expect(
+          Date.parse(current.journey.module.ministryPrayer.bundleStartedAt),
+        ).toBeGreaterThanOrEqual(Date.parse(bundleStartedAt));
+        bundleStartedAt = current.journey.module.ministryPrayer.bundleStartedAt;
+      }
+    }
     expect(current).toMatchObject({ journey: { state: "COMPLETED" } });
+  });
+
+  it("repairs only the authorized timing and missing module for a running canonical journey", async () => {
+    await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
+    await seedProductionJourney(getDatabase());
+    await joinParticipant({
+      displayName: "Ana",
+      prayerRequest: "",
+      sessionTokenHash: "running-canonical".padStart(64, "0"),
+    });
+    await launchGathering();
+    await getDatabase().journeyModule.update({
+      where: { id: SHORT_STUDY_MODULE_ID },
+      data: { recommendedSeconds: 3_600 },
+    });
+    await getDatabase().journeyModule.update({
+      where: { id: MINISTRY_PRAYER_MODULE_ID },
+      data: { title: "Preserve this running title" },
+    });
+
+    expect(await seedProductionJourney(getDatabase())).toBe("attached");
+    expect(
+      await getDatabase().journeyModule.findMany({
+        where: { journeyId: PRODUCTION_JOURNEY_ID },
+        orderBy: { position: "asc" },
+        select: { id: true, recommendedSeconds: true, title: true },
+      }),
+    ).toEqual([
+      {
+        id: SHORT_STUDY_MODULE_ID,
+        recommendedSeconds: 600,
+        title: "Why we pray",
+      },
+      {
+        id: MINISTRY_PRAYER_MODULE_ID,
+        recommendedSeconds: 2_400,
+        title: "Preserve this running title",
+      },
+    ]);
+
+    await getDatabase().journeyModule.delete({
+      where: { id: MINISTRY_PRAYER_MODULE_ID },
+    });
+    expect(await seedProductionJourney(getDatabase())).toBe("attached");
+    expect(
+      await getDatabase().journeyModule.findUnique({
+        where: { id: MINISTRY_PRAYER_MODULE_ID },
+        select: { recommendedSeconds: true },
+      }),
+    ).toEqual({ recommendedSeconds: 2_400 });
   });
 
   it("preserves running journeys while activating the production seed when safe", async () => {

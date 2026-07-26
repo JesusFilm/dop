@@ -64,6 +64,49 @@ const activeSnapshot: RoomSnapshot = {
   journey: activeJourney,
 };
 
+const ministryPrayerJourney: ActiveJourney = {
+  ...activeJourney,
+  expectedState: "ministry-module:0",
+  module: {
+    id: "ministry-module",
+    title: "Pray for our ministries",
+    behaviorKey: "ministry-prayer",
+    configuration: { bundlesPerRoom: 5 },
+    recommendedSeconds: 2_400,
+    startedAt: "2026-07-26T00:00:00.000Z",
+    serverTime: "2026-07-26T00:01:00.000Z",
+    ministryPrayer: {
+      bundle: {
+        id: "finance-one",
+        ministry: "FINANCE",
+        sections: [
+          {
+            heading: "Please Pray",
+            points: [
+              "The FY 26 audit is underway. Pray it goes smoothly and well (it usually does).",
+            ],
+          },
+        ],
+      },
+      bundleNumber: 1,
+      bundleCount: 5,
+      assignees: [
+        { id: "participant-1", name: "Ana" },
+        { id: "participant-2", name: "Ben" },
+      ],
+      viewerRole: "leader",
+      canReassign: true,
+      bundleStartedAt: "2026-07-26T00:00:30.000Z",
+      bundleRecommendedSeconds: 480,
+    },
+  },
+};
+
+const ministryPrayerSnapshot: RoomSnapshot = {
+  ...activeSnapshot,
+  journey: ministryPrayerJourney,
+};
+
 const completedSnapshot: Extract<ParticipantSnapshot, { state: "ROOM" }> = {
   ...activeSnapshot,
   revision: 3,
@@ -123,6 +166,14 @@ describe("ParticipantExperience journey progression", () => {
     if (!header) throw new Error("Expected the participant header");
     expect(within(header).queryByText("Shared gathering")).toBeNull();
     expect(screen.queryByRole("timer")).toBeNull();
+  });
+
+  it("shows synchronized overall and bundle timers for ministry prayer", () => {
+    render(<ParticipantExperience initialSnapshot={ministryPrayerSnapshot} />);
+
+    expect(screen.getAllByRole("timer")).toHaveLength(2);
+    expect(screen.getByText("Overall:")).toBeTruthy();
+    expect(screen.getByText("This bundle:")).toBeTruthy();
   });
 
   it("replaces the live snapshot after a successful advance", async () => {
@@ -322,6 +373,38 @@ describe("ModuleShell leader controls", () => {
     expect(
       screen.queryByRole("button", { name: "Reassign current reader" }),
     ).toBeNull();
+  });
+
+  it("shows one ministry bundle and targets either assigned person for replacement", () => {
+    const onReassign = vi.fn().mockResolvedValue("changed");
+    render(
+      <ModuleShell
+        snapshot={ministryPrayerSnapshot}
+        journey={ministryPrayerJourney}
+        onAdvance={vi.fn()}
+        onReassign={onReassign}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Invite Ana and Ben to pray for this bundle.",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "FINANCE" })).toBeTruthy();
+    expect(screen.getByText("Bundle 1 of 5")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The FY 26 audit is underway. Pray it goes smoothly and well (it usually does).",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("bundle-2")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Replace Ben" }));
+    expect(onReassign).toHaveBeenCalledWith("participant-2");
   });
 
   it("asks the leader to retry when reader reassignment is stale", async () => {

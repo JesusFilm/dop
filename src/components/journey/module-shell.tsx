@@ -31,7 +31,9 @@ export function ModuleShell({
   snapshot: RoomSnapshot;
   journey: ActiveJourney;
   onAdvance: () => Promise<void>;
-  onReassign: () => Promise<"changed" | "stale" | "unavailable" | "error">;
+  onReassign: (
+    targetParticipantId?: string,
+  ) => Promise<"changed" | "stale" | "unavailable" | "error">;
   onTakeover: () => Promise<void>;
   isPending: boolean;
   error: string;
@@ -57,9 +59,9 @@ export function ModuleShell({
     }
   }
 
-  async function reassignReader() {
+  async function reassignParticipant(targetParticipantId?: string) {
     setReassignMessage("");
-    const result = await onReassign();
+    const result = await onReassign(targetParticipantId);
     if (result === "unavailable") {
       setReassignMessage("No other reader is available.");
     } else if (result === "stale") {
@@ -120,13 +122,28 @@ export function ModuleShell({
                 <ActionButton
                   className="mt-3 bg-white"
                   tone="secondary"
-                  onClick={reassignReader}
+                  onClick={() => reassignParticipant()}
                   disabled={isPending}
                 >
                   <RefreshCw aria-hidden="true" className="size-5" />
                   Reassign current reader
                 </ActionButton>
               ) : null}
+              {journey.module.behaviorKey === "ministry-prayer" &&
+              journey.module.ministryPrayer.canReassign
+                ? journey.module.ministryPrayer.assignees.map((assignee) => (
+                    <ActionButton
+                      key={assignee.id}
+                      className="mt-3 bg-white"
+                      tone="secondary"
+                      onClick={() => reassignParticipant(assignee.id)}
+                      disabled={isPending}
+                    >
+                      <RefreshCw aria-hidden="true" className="size-5" />
+                      Replace {assignee.name}
+                    </ActionButton>
+                  ))
+                : null}
               {reassignMessage ? (
                 <p
                   role="status"
