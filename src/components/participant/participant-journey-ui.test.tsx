@@ -125,6 +125,69 @@ describe("ParticipantExperience journey progression", () => {
     expect(screen.queryByRole("timer")).toBeNull();
   });
 
+  it("hides the timer while prayer groups move, then shows it after reveal", () => {
+    const prayerJourney: ActiveJourney = {
+      ...activeJourney,
+      expectedState: "module-1:grouping",
+      module: {
+        id: "module-1",
+        title: "Personal prayer",
+        behaviorKey: "personal-prayer",
+        configuration: {},
+        recommendedSeconds: 600,
+        startedAt: "2026-07-26T00:00:00.000Z",
+        serverTime: "2026-07-26T00:01:00.000Z",
+        personalPrayer: {
+          phase: "grouping",
+          members: [
+            { id: "participant-1", name: "Ana" },
+            { id: "participant-2", name: "Ben" },
+          ],
+        },
+      },
+    };
+    if (prayerJourney.module.behaviorKey !== "personal-prayer") {
+      throw new Error("Expected Personal prayer fixture");
+    }
+    const { unmount } = render(
+      <ParticipantExperience
+        initialSnapshot={{ ...activeSnapshot, journey: prayerJourney }}
+      />,
+    );
+
+    expect(screen.queryByRole("timer")).toBeNull();
+    expect(screen.getByText("Find your prayer group")).toBeTruthy();
+
+    unmount();
+    render(
+      <ParticipantExperience
+        initialSnapshot={{
+          ...activeSnapshot,
+          journey: {
+            ...prayerJourney,
+            expectedState: "module-1:revealed",
+            module: {
+              ...prayerJourney.module,
+              personalPrayer: {
+                phase: "revealed",
+                members: [
+                  {
+                    id: "participant-1",
+                    name: "Ana",
+                    request: "Please pray for courage.",
+                  },
+                  { id: "participant-2", name: "Ben", request: null },
+                ],
+              },
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("timer")).toBeTruthy();
+  });
+
   it("replaces the live snapshot after a successful advance", async () => {
     vi.mocked(fetchWithTimeout).mockResolvedValue(
       response({ ok: true, body: completedSnapshot }),
@@ -223,6 +286,83 @@ describe("ModuleShell leader controls", () => {
         name: "Leader unavailable? Take over",
       }),
     ).toBeNull();
+  });
+
+  it("reveals no requests before the leader releases the prayer groups", () => {
+    const prayerJourney: ActiveJourney = {
+      ...activeJourney,
+      expectedState: "module-1:grouping",
+      module: {
+        id: "module-1",
+        title: "Personal prayer",
+        behaviorKey: "personal-prayer",
+        configuration: {},
+        recommendedSeconds: 600,
+        startedAt: "2026-07-26T00:00:00.000Z",
+        serverTime: "2026-07-26T00:01:00.000Z",
+        personalPrayer: {
+          phase: "grouping",
+          members: [
+            { id: "participant-1", name: "Ana" },
+            { id: "participant-2", name: "Ben" },
+          ],
+        },
+      },
+    };
+    if (prayerJourney.module.behaviorKey !== "personal-prayer") {
+      throw new Error("Expected Personal prayer fixture");
+    }
+    const { rerender } = render(
+      <ModuleShell
+        snapshot={activeSnapshot}
+        journey={prayerJourney}
+        onAdvance={vi.fn()}
+        onReassign={vi.fn()}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Reveal prayer requests" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Please pray for courage.")).toBeNull();
+
+    rerender(
+      <ModuleShell
+        snapshot={activeSnapshot}
+        journey={{
+          ...prayerJourney,
+          expectedState: "module-1:revealed",
+          module: {
+            ...prayerJourney.module,
+            personalPrayer: {
+              phase: "revealed",
+              members: [
+                {
+                  id: "participant-1",
+                  name: "Ana",
+                  request: "Please pray for courage.",
+                },
+                { id: "participant-2", name: "Ben", request: null },
+              ],
+            },
+          },
+        }}
+        onAdvance={vi.fn()}
+        onReassign={vi.fn()}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    expect(screen.getByText("Please pray for courage.")).toBeTruthy();
+    expect(
+      screen.getByText("Ask them what they’d like prayer for."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
   });
 
   it("shows shared Short Study content with leader and reader-specific cues", () => {
