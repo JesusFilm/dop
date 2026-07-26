@@ -1,3 +1,5 @@
+import { shuffled, type Random } from "@/lib/journey/random";
+
 export type ShortStudyConfiguration = {
   passageReference: string;
   scriptureText: string;
@@ -19,7 +21,6 @@ export type ShortStudyState = {
 };
 
 type Participant = { id: string };
-type Random = () => number;
 
 function nonEmptyString(
   value: unknown,
@@ -85,18 +86,6 @@ export function buildShortStudyContributions(
       text: configuration.discussionQuestion,
     },
   ];
-}
-
-function shuffled<T>(values: T[], random: Random): T[] {
-  const result = [...values];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(random() * (index + 1));
-    [result[index], result[swapIndex]] = [
-      result[swapIndex] as T,
-      result[index] as T,
-    ];
-  }
-  return result;
 }
 
 function createAssignments(

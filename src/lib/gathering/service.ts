@@ -7,7 +7,10 @@ import {
 } from "@/lib/gathering/assignment";
 import { ACTIVE_GATHERING_ID, INPUT_LIMITS } from "@/lib/gathering/constants";
 import { GatheringError } from "@/lib/gathering/errors";
-import { encryptPrayerRequest } from "@/lib/gathering/prayer-request-crypto";
+import {
+  decryptPrayerRequest,
+  encryptPrayerRequest,
+} from "@/lib/gathering/prayer-request-crypto";
 import type {
   OrganizerSnapshot,
   ParticipantSnapshot,
@@ -22,7 +25,16 @@ import {
   reconcileShortStudyLeader,
   type ShortStudyConfiguration,
 } from "@/lib/journey/short-study";
-import type { ShortStudyPresentation } from "@/lib/journey/types";
+import {
+  addParticipantToPersonalPrayerState,
+  createPersonalPrayerState,
+  parsePersonalPrayerState,
+  revealPersonalPrayerState,
+} from "@/lib/journey/personal-prayer";
+import type {
+  PersonalPrayerPresentation,
+  ShortStudyPresentation,
+} from "@/lib/journey/types";
 
 type Transaction = Prisma.TransactionClient;
 
@@ -170,6 +182,70 @@ function buildShortStudyPresentation(input: {
   };
 }
 
+async function buildPersonalPrayerPresentation(input: {
+  database: PrismaClient;
+  moduleState: Prisma.JsonValue | null;
+  room: {
+    participants: { id: string; displayName: string }[];
+  };
+  viewerId: string;
+}): Promise<PersonalPrayerPresentation> {
+  const state = parsePersonalPrayerState(input.moduleState);
+  if (!state) throw new Error("Invalid Personal prayer state");
+
+  const group = state.groups.find((candidate) =>
+    candidate.includes(input.viewerId),
+  );
+  if (!group) throw new Error("Viewer has no Personal prayer group");
+
+  const requests =
+    state.phase === "revealed"
+      ? await input.database.participant.findMany({
+          where: { id: { in: group } },
+          select: {
+            id: true,
+            prayerCiphertext: true,
+            prayerIv: true,
+            prayerAuthTag: true,
+          },
+        })
+      : [];
+  const requestsByParticipant = new Map(
+    requests.map((participant) => [
+      participant.id,
+      participant.prayerCiphertext &&
+      participant.prayerIv &&
+      participant.prayerAuthTag
+        ? decryptPrayerRequest({
+            ciphertext: participant.prayerCiphertext,
+            iv: participant.prayerIv,
+            authTag: participant.prayerAuthTag,
+          })
+        : null,
+    ]),
+  );
+  const membersById = new Map(
+    input.room.participants.map((participant) => [participant.id, participant]),
+  );
+
+  return {
+    phase: state.phase,
+    members: group.flatMap((participantId) => {
+      const participant = membersById.get(participantId);
+      if (!participant) return [];
+      return [
+        {
+          id: participant.id,
+          name: participant.displayName,
+          ...(state.phase === "revealed"
+            ? { request: requestsByParticipant.get(participant.id) ?? null }
+            : {}),
+        },
+      ];
+    }),
+  };
+}
+
 export async function getParticipantSnapshot(
   sessionTokenHash?: string,
 ): Promise<ParticipantSnapshot> {
@@ -272,6 +348,15 @@ export async function getParticipantSnapshot(
                 viewerId: participant.id,
               })
             : undefined;
+        const personalPrayer =
+          clientModule.behaviorKey === "personal-prayer"
+            ? await buildPersonalPrayerPresentation({
+                database,
+                moduleState: runtime.moduleState,
+                room: participant.room,
+                viewerId: participant.id,
+              })
+            : undefined;
         const presentedModule =
           clientModule.behaviorKey === "short-study"
             ? {
@@ -281,13 +366,21 @@ export async function getParticipantSnapshot(
                 },
                 shortStudy: shortStudy!,
               }
-            : clientModule;
+            : clientModule.behaviorKey === "personal-prayer"
+              ? {
+                  behaviorKey: "personal-prayer" as const,
+                  configuration: clientModule.configuration,
+                  personalPrayer: personalPrayer!,
+                }
+              : clientModule;
         journey = {
           state: "ACTIVE",
           journeyName: runtime.journey.name,
           expectedState: shortStudy
             ? `${runtime.currentModule.id}:${shortStudy.contributionNumber - 1}`
-            : runtime.currentModule.id,
+            : personalPrayer
+              ? `${runtime.currentModule.id}:${personalPrayer.phase}`
+              : runtime.currentModule.id,
           joinedInProgress,
           module: {
             id: runtime.currentModule.id,
@@ -412,6 +505,12 @@ export async function joinParticipant(input: {
   if (!displayName) {
     throw new GatheringError("Enter your name to join.", "NAME_REQUIRED");
   }
+  if (!prayerRequest) {
+    throw new GatheringError(
+      "Enter a personal prayer request to join.",
+      "PRAYER_REQUEST_REQUIRED",
+    );
+  }
 
   await serializedTransaction(async (transaction) => {
     const existing = await transaction.participant.findUnique({
@@ -423,9 +522,7 @@ export async function joinParticipant(input: {
     const gathering = await transaction.gathering.findUniqueOrThrow({
       where: { id: ACTIVE_GATHERING_ID },
     });
-    const encrypted = prayerRequest
-      ? encryptPrayerRequest(prayerRequest)
-      : null;
+    const encrypted = encryptPrayerRequest(prayerRequest);
 
     const rooms = await transaction.room.findMany({
       where: { gatheringId: ACTIVE_GATHERING_ID },
@@ -454,13 +551,43 @@ export async function joinParticipant(input: {
         gatheringId: ACTIVE_GATHERING_ID,
         displayName,
         sessionTokenHash: input.sessionTokenHash,
-        prayerCiphertext: encrypted?.ciphertext,
-        prayerIv: encrypted?.iv,
-        prayerAuthTag: encrypted?.authTag,
+        prayerCiphertext: encrypted.ciphertext,
+        prayerIv: encrypted.iv,
+        prayerAuthTag: encrypted.authTag,
         roomId: room.id,
         assignedAt: new Date(),
       },
     });
+    const roomJourney =
+      gathering.phase === "ASSIGNED"
+        ? await transaction.roomJourney.findUnique({
+            where: { roomId: room.id },
+            select: {
+              id: true,
+              moduleState: true,
+              currentModule: { select: { behaviorKey: true } },
+            },
+          })
+        : null;
+    if (roomJourney?.currentModule?.behaviorKey === "personal-prayer") {
+      const state = parsePersonalPrayerState(roomJourney.moduleState);
+      if (!state) {
+        throw new GatheringError(
+          "The room journey state is invalid.",
+          "JOURNEY_STATE_INVALID",
+          409,
+        );
+      }
+      await transaction.roomJourney.update({
+        where: { id: roomJourney.id },
+        data: {
+          moduleState: addParticipantToPersonalPrayerState(
+            state,
+            participant.id,
+          ),
+        },
+      });
+    }
     if (room.participantCount === 0) {
       await transaction.room.updateMany({
         where: { id: room.id, leaderId: null },
@@ -626,9 +753,23 @@ export async function advanceRoomJourney(input: {
       currentModule?.behaviorKey === "short-study"
         ? parseShortStudyState(runtime.moduleState, currentModule.configuration)
         : undefined;
+    const currentPersonalPrayerState =
+      currentModule?.behaviorKey === "personal-prayer"
+        ? parsePersonalPrayerState(runtime.moduleState)
+        : undefined;
     if (
       currentModule?.behaviorKey === "short-study" &&
       !currentShortStudyState
+    ) {
+      throw new GatheringError(
+        "The room journey state is invalid.",
+        "JOURNEY_STATE_INVALID",
+        409,
+      );
+    }
+    if (
+      currentModule?.behaviorKey === "personal-prayer" &&
+      !currentPersonalPrayerState
     ) {
       throw new GatheringError(
         "The room journey state is invalid.",
@@ -640,7 +781,10 @@ export async function advanceRoomJourney(input: {
       ? "completed"
       : currentModule?.behaviorKey === "short-study" && currentShortStudyState
         ? `${currentModule.id}:${currentShortStudyState.contributionIndex}`
-        : (runtime.currentModuleId ?? "gathering");
+        : currentModule?.behaviorKey === "personal-prayer" &&
+            currentPersonalPrayerState
+          ? `${currentModule.id}:${currentPersonalPrayerState.phase}`
+          : (runtime.currentModuleId ?? "gathering");
     if (input.expectedState !== currentState) return;
     if (runtime.completedAt) return;
 
@@ -668,21 +812,45 @@ export async function advanceRoomJourney(input: {
         return;
       }
     }
+    if (
+      currentModule?.behaviorKey === "personal-prayer" &&
+      currentPersonalPrayerState?.phase === "grouping"
+    ) {
+      await transaction.roomJourney.update({
+        where: { id: runtime.id },
+        data: {
+          moduleState: revealPersonalPrayerState(currentPersonalPrayerState),
+          moduleStartedAt: new Date(),
+        },
+      });
+      await transaction.gathering.update({
+        where: { id: ACTIVE_GATHERING_ID },
+        data: { revision: { increment: 1 } },
+      });
+      return;
+    }
 
     const nextModule = validJourney.modules[currentIndex + 1];
     const now = new Date();
+    const roomParticipants =
+      nextModule?.behaviorKey === "short-study" ||
+      nextModule?.behaviorKey === "personal-prayer"
+        ? await transaction.participant.findMany({
+            where: { roomId: participant.roomId },
+            orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+            select: { id: true },
+          })
+        : [];
     const nextModuleState =
       nextModule?.behaviorKey === "short-study"
         ? createShortStudyState(
             nextModule.configuration,
-            await transaction.participant.findMany({
-              where: { roomId: participant.roomId },
-              orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
-              select: { id: true },
-            }),
+            roomParticipants,
             participant.id,
           )
-        : null;
+        : nextModule?.behaviorKey === "personal-prayer"
+          ? createPersonalPrayerState(roomParticipants)
+          : null;
     await transaction.roomJourney.update({
       where: { id: runtime.id },
       data: nextModule

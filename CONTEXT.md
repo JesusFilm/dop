@@ -19,8 +19,9 @@ Use these terms in code, tests, issues, and product copy.
 
 - **Gathering** — the one active Day of Prayer event. It is either `FORMING` or
   `ASSIGNED` and can be reset for another run.
-- **Participant** — a person who joins with a display name and optional personal
-  prayer request. Their browser is remembered by an opaque cookie.
+- **Participant** — a person who joins with a display name and required personal
+  prayer request. Their browser is remembered by an opaque cookie. Legacy
+  participant records may have no request.
 - **Room** — a seeded, application-read-only physical space with a name,
   wayfinding directions, and optional maximum capacity. A finite maximum is at
   least two, and the configuration always includes an unlimited room.
@@ -45,9 +46,11 @@ Use these terms in code, tests, issues, and product copy.
 ## Privacy boundary
 
 Personal prayer requests are encrypted at rest. They never appear in the
-framework's participant journey snapshots or organizer projection; a later
-module will expose only its explicitly filtered request view. Reset deletes
-requests with the participant records.
+organizer projection or general room roster. The Personal Prayer module assigns
+persisted subgroups, omits all request content while people regroup, and after
+the Leader reveals requests exposes plaintext only in the authenticated
+viewer's assigned subgroup projection. Advancing away from the module removes
+that projection; reset deletes requests with the participant records.
 
 ## Stack
 

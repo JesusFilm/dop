@@ -4,6 +4,7 @@ import { ACTIVE_GATHERING_ID } from "@/lib/gathering/constants";
 export const PRODUCTION_JOURNEY_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a001";
 export const SHORT_STUDY_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a002";
 export const KNOWING_GOD_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a003";
+export const PERSONAL_PRAYER_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a004";
 
 export const KNOWING_GOD_CONFIGURATION = {
   passageReference: "Ephesians 1:15–23",
@@ -56,51 +57,101 @@ export async function seedProductionJourney(
     const gathering = await transaction.gathering.findUniqueOrThrow({
       where: { id: ACTIVE_GATHERING_ID },
     });
+    const runningCanonicalJourney =
+      gathering.phase === "ASSIGNED" &&
+      gathering.journeyId === PRODUCTION_JOURNEY_ID &&
+      (await transaction.roomJourney.count({
+        where: { journeyId: PRODUCTION_JOURNEY_ID },
+      })) > 0;
+
     await transaction.journey.upsert({
       where: { id: PRODUCTION_JOURNEY_ID },
       create: {
         id: PRODUCTION_JOURNEY_ID,
         name: "Day of Prayer",
       },
-      update: { name: "Day of Prayer" },
+      update: runningCanonicalJourney ? {} : { name: "Day of Prayer" },
     });
 
-    const whyWePraySeed = {
-      journeyId: PRODUCTION_JOURNEY_ID,
-      position: 2,
-      behaviorKey: "short-study",
-      title: "Why we pray",
-      recommendedSeconds: 600,
-      configuration: SHORT_STUDY_CONFIGURATION,
-    } as const;
-    await transaction.journeyModule.upsert({
-      where: { id: SHORT_STUDY_MODULE_ID },
-      create: {
-        id: SHORT_STUDY_MODULE_ID,
-        ...whyWePraySeed,
-      },
-      update: whyWePraySeed,
-    });
-    const knowingGodSeed = {
-      journeyId: PRODUCTION_JOURNEY_ID,
-      position: 0,
-      behaviorKey: "short-study",
-      title: "Knowing God",
-      recommendedSeconds: 600,
-      configuration: KNOWING_GOD_CONFIGURATION,
-    } as const;
-    await transaction.journeyModule.upsert({
-      where: { id: KNOWING_GOD_MODULE_ID },
-      create: {
-        id: KNOWING_GOD_MODULE_ID,
-        ...knowingGodSeed,
-      },
-      update: knowingGodSeed,
-    });
-    await transaction.journeyModule.update({
-      where: { id: SHORT_STUDY_MODULE_ID },
-      data: { position: 1 },
-    });
+    if (!runningCanonicalJourney) {
+      const lastModule = await transaction.journeyModule.findFirst({
+        where: { journeyId: PRODUCTION_JOURNEY_ID },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+      const temporaryPosition = (lastModule?.position ?? -1) + 1;
+      for (const [offset, id] of [
+        KNOWING_GOD_MODULE_ID,
+        SHORT_STUDY_MODULE_ID,
+        PERSONAL_PRAYER_MODULE_ID,
+      ].entries()) {
+        await transaction.journeyModule.updateMany({
+          where: { id, journeyId: PRODUCTION_JOURNEY_ID },
+          data: { position: temporaryPosition + offset },
+        });
+      }
+
+      await transaction.journeyModule.upsert({
+        where: { id: KNOWING_GOD_MODULE_ID },
+        create: {
+          id: KNOWING_GOD_MODULE_ID,
+          journeyId: PRODUCTION_JOURNEY_ID,
+          position: 0,
+          behaviorKey: "short-study",
+          title: "Knowing God",
+          recommendedSeconds: 600,
+          configuration: KNOWING_GOD_CONFIGURATION,
+        },
+        update: {
+          journeyId: PRODUCTION_JOURNEY_ID,
+          position: 0,
+          behaviorKey: "short-study",
+          title: "Knowing God",
+          recommendedSeconds: 600,
+          configuration: KNOWING_GOD_CONFIGURATION,
+        },
+      });
+      await transaction.journeyModule.upsert({
+        where: { id: SHORT_STUDY_MODULE_ID },
+        create: {
+          id: SHORT_STUDY_MODULE_ID,
+          journeyId: PRODUCTION_JOURNEY_ID,
+          position: 1,
+          behaviorKey: "short-study",
+          title: "Why we pray",
+          recommendedSeconds: 600,
+          configuration: SHORT_STUDY_CONFIGURATION,
+        },
+        update: {
+          journeyId: PRODUCTION_JOURNEY_ID,
+          position: 1,
+          behaviorKey: "short-study",
+          title: "Why we pray",
+          recommendedSeconds: 600,
+          configuration: SHORT_STUDY_CONFIGURATION,
+        },
+      });
+      await transaction.journeyModule.upsert({
+        where: { id: PERSONAL_PRAYER_MODULE_ID },
+        create: {
+          id: PERSONAL_PRAYER_MODULE_ID,
+          journeyId: PRODUCTION_JOURNEY_ID,
+          position: 2,
+          behaviorKey: "personal-prayer",
+          title: "Personal prayer",
+          recommendedSeconds: 600,
+          configuration: {},
+        },
+        update: {
+          journeyId: PRODUCTION_JOURNEY_ID,
+          position: 2,
+          behaviorKey: "personal-prayer",
+          title: "Personal prayer",
+          recommendedSeconds: 600,
+          configuration: {},
+        },
+      });
+    }
 
     if (gathering.journeyId && gathering.journeyId !== PRODUCTION_JOURNEY_ID) {
       return "preserved-existing";
