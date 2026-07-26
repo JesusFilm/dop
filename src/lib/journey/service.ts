@@ -1,9 +1,11 @@
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
-import { PRODUCTION_JOURNEY_ID } from "@/lib/journey/constants";
 import { validateJourneyModule } from "@/lib/journey/registry";
 import type { ValidJourney } from "@/lib/journey/types";
 
 type Database = Prisma.TransactionClient | PrismaClient;
+
+const MIN_AVAILABLE_JOURNEY_SECONDS = 20 * 60;
+const MAX_AVAILABLE_JOURNEY_SECONDS = 90 * 60;
 
 export async function getValidJourney(
   database: Database,
@@ -38,8 +40,10 @@ export async function getValidJourney(
       (total, module) => total + module.recommendedSeconds,
       0,
     );
-    const minimumSeconds = journey.id === PRODUCTION_JOURNEY_ID ? 3_000 : 3_600;
-    if (recommendedSeconds < minimumSeconds || recommendedSeconds > 5_400) {
+    if (
+      recommendedSeconds < MIN_AVAILABLE_JOURNEY_SECONDS ||
+      recommendedSeconds > MAX_AVAILABLE_JOURNEY_SECONDS
+    ) {
       return null;
     }
     return { id: journey.id, name: journey.name, modules };

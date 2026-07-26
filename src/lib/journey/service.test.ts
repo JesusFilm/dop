@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { PRODUCTION_JOURNEY_ID } from "@/lib/journey/constants";
 import { getValidJourney } from "@/lib/journey/service";
 
 function databaseWithModules(
@@ -36,40 +35,28 @@ describe("journey validation", () => {
   });
 
   it.each([
-    { minutes: 60, available: true },
-    { minutes: 90, available: true },
-    { minutes: 50, available: false },
-    { minutes: 91, available: false },
+    { name: "two-study 20-minute", durations: [600, 600], available: true },
+    { name: "19-minute", durations: [19 * 60], available: false },
+    { name: "60-minute", durations: [60 * 60], available: true },
+    { name: "90-minute", durations: [90 * 60], available: true },
+    { name: "91-minute", durations: [91 * 60], available: false },
   ])(
-    "treats a $minutes-minute journey availability as $available",
-    async ({ minutes, available }) => {
+    "treats a $name journey availability as $available",
+    async ({ durations, available }) => {
       process.env.JOURNEY_TEST_MODULES = "enabled";
       const journey = await getValidJourney(
-        databaseWithModules([
-          {
-            position: 0,
-            recommendedSeconds: minutes * 60,
-          },
-        ]),
+        databaseWithModules(
+          durations.map((recommendedSeconds, position) => ({
+            position,
+            recommendedSeconds,
+          })),
+        ),
         "00000000-0000-0000-0000-000000000001",
       );
 
       expect(journey !== null).toBe(available);
     },
   );
-
-  it("accepts the canonical partial journey at 50 minutes", async () => {
-    process.env.JOURNEY_TEST_MODULES = "enabled";
-    await expect(
-      getValidJourney(
-        databaseWithModules(
-          [{ position: 0, recommendedSeconds: 3_000 }],
-          PRODUCTION_JOURNEY_ID,
-        ),
-        PRODUCTION_JOURNEY_ID,
-      ),
-    ).resolves.not.toBeNull();
-  });
 
   it.each([
     {
@@ -79,6 +66,13 @@ describe("journey validation", () => {
     {
       name: "position gap",
       modules: [{ position: 1, recommendedSeconds: 3_600 }],
+    },
+    {
+      name: "non-positive duration",
+      modules: [
+        { position: 0, recommendedSeconds: 3_600 },
+        { position: 1, recommendedSeconds: 0 },
+      ],
     },
     {
       name: "unknown behavior",
