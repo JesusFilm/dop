@@ -56,17 +56,3 @@ export function pickSmallestEligibleRoom<T extends CountedRoom>(
 ): T | null {
   return firstSmallestRoom(rooms);
 }
-
-export function chooseCoordinator(
-  participantIds: readonly string[],
-  random: () => number = Math.random,
-): string | null {
-  if (participantIds.length === 0) {
-    return null;
-  }
-
-  return (
-    participantIds[Math.floor(random() * participantIds.length)] ??
-    participantIds[0]
-  );
-}

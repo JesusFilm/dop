@@ -22,8 +22,9 @@ always include at least one unlimited room; finite capacities are at least two.
 Assign each participant during the join transaction in participant join order
 and seeded room creation order. Fill two places in each room before advancing,
 then choose the first smallest eligible room so finite rooms fall out when full.
-Launch selects coordinators and reveals existing assignments without
-recalculating membership.
+The first participant assigned to a room becomes its coordinator. Launch
+reveals existing assignments and coordinator identities without recalculating
+membership.
 
 Use an opaque HttpOnly browser cookie for same-device participant continuity,
 storing only its SHA-256 digest. Encrypt non-empty personal prayer requests with

@@ -100,6 +100,22 @@ describe("gathering lifecycle", () => {
     expect(beforeLaunch.rooms.map(({ memberCount }) => memberCount)).toEqual([
       3, 2,
     ]);
+    const storedCoordinators = await getDatabase().room.findMany({
+      where: { gatheringId: ACTIVE_GATHERING_ID },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { coordinator: { select: { displayName: true } } },
+    });
+    expect(
+      storedCoordinators.map(({ coordinator }) => coordinator?.displayName),
+    ).toEqual(["Participant 1", "Participant 3"]);
+    expect(
+      beforeLaunch.rooms.map(({ coordinatorName }) => coordinatorName),
+    ).toEqual([null, null]);
+    expect(
+      beforeLaunch.rooms
+        .flatMap(({ members }) => members)
+        .some(({ isCoordinator }) => isCoordinator),
+    ).toBe(false);
     expect(JSON.stringify(beforeLaunch)).not.toContain("Private request");
     expect(await getParticipantSnapshot("1".padStart(64, "0"))).toMatchObject({
       state: "LOBBY",
@@ -118,16 +134,13 @@ describe("gathering lifecycle", () => {
       assigned.rooms.map((room) => room.members.map(({ id }) => id)),
     ).toEqual(provisionalMembership);
     expect(
-      assigned.rooms.every(
-        (room) => room.memberCount === 0 || room.coordinatorName !== null,
-      ),
-    ).toBe(true);
+      assigned.rooms.map(({ coordinatorName }) => coordinatorName),
+    ).toEqual(["Participant 1", "Participant 3"]);
 
     const first = await getParticipantSnapshot("1".padStart(64, "0"));
     expect(first.state).toBe("ROOM");
-    if (first.state !== "ROOM") throw new Error("Expected a room snapshot");
-    await takeOverCoordinator("1".padStart(64, "0"));
-    const afterTakeover = await getParticipantSnapshot("1".padStart(64, "0"));
+    await takeOverCoordinator("4".padStart(64, "0"));
+    const afterTakeover = await getParticipantSnapshot("4".padStart(64, "0"));
     expect(
       afterTakeover.state === "ROOM" &&
         afterTakeover.room.members.find(
@@ -143,6 +156,11 @@ describe("gathering lifecycle", () => {
     expect((await getParticipantSnapshot("late".padStart(64, "0"))).state).toBe(
       "ROOM",
     );
+    expect(
+      (await getOrganizerSnapshot()).rooms.find(
+        ({ name }) => name === "Upper Room",
+      )?.coordinatorName,
+    ).toBe("Participant 4");
 
     await resetGathering();
     expect(await getParticipantSnapshot("1".padStart(64, "0"))).toMatchObject({
@@ -188,6 +206,41 @@ describe("gathering lifecycle", () => {
         snapshot.room.members.find(({ id }) => id === snapshot.participant.id)
           ?.isCoordinator,
     ).toBe(true);
+  });
+
+  it("preserves first-join coordination for a room formed before rollout", async () => {
+    await seedRooms([
+      {
+        name: "Olive Grove",
+        directions: "Level 2",
+        maxCapacity: null,
+      },
+    ]);
+    await joinParticipant({
+      displayName: "First Participant",
+      prayerRequest: "",
+      sessionTokenHash: "first".padStart(64, "0"),
+    });
+    await joinParticipant({
+      displayName: "Second Participant",
+      prayerRequest: "",
+      sessionTokenHash: "second".padStart(64, "0"),
+    });
+    await getDatabase().room.updateMany({
+      where: { gatheringId: ACTIVE_GATHERING_ID },
+      data: { coordinatorId: null },
+    });
+    await joinParticipant({
+      displayName: "Post-rollout Participant",
+      prayerRequest: "",
+      sessionTokenHash: "post-rollout".padStart(64, "0"),
+    });
+
+    await launchGathering();
+
+    expect((await getOrganizerSnapshot()).rooms[0]?.coordinatorName).toBe(
+      "First Participant",
+    );
   });
 
   it("keeps reveal atomic without recalculating room membership", async () => {

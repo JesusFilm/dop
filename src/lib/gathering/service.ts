@@ -1,7 +1,6 @@
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 import { getDatabase } from "@/lib/db";
 import {
-  chooseCoordinator,
   pickNextRoom,
   pickSmallestEligibleRoom,
   validateRoomConfiguration,
@@ -197,11 +196,16 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
       directions: room.directions,
       maxCapacity: room.maxCapacity,
       memberCount: room.participants.length,
-      coordinatorName: room.coordinator?.displayName ?? null,
+      coordinatorName:
+        gathering.phase === "ASSIGNED"
+          ? (room.coordinator?.displayName ?? null)
+          : null,
       members: room.participants.map((participant) => ({
         id: participant.id,
         name: participant.displayName,
-        isCoordinator: participant.id === room.coordinatorId,
+        isCoordinator:
+          gathering.phase === "ASSIGNED" &&
+          participant.id === room.coordinatorId,
       })),
     })),
   };
@@ -272,7 +276,7 @@ export async function joinParticipant(input: {
         assignedAt: new Date(),
       },
     });
-    if (gathering.phase === "ASSIGNED") {
+    if (room.participantCount === 0) {
       await transaction.room.updateMany({
         where: { id: room.id, coordinatorId: null },
         data: { coordinatorId: participant.id },
@@ -310,22 +314,20 @@ export async function launchGathering(): Promise<void> {
     });
     assertValidRoomConfiguration(rooms);
 
-    const assignedAt = new Date();
     for (const room of rooms) {
-      await transaction.room.update({
-        where: { id: room.id },
-        data: {
-          coordinatorId: chooseCoordinator(
-            room.participants.map(({ id }) => id),
-          ),
-        },
+      const firstParticipant = room.participants[0];
+      if (!firstParticipant) continue;
+
+      await transaction.room.updateMany({
+        where: { id: room.id, coordinatorId: null },
+        data: { coordinatorId: firstParticipant.id },
       });
     }
     await transaction.gathering.update({
       where: { id: ACTIVE_GATHERING_ID },
       data: {
         phase: "ASSIGNED",
-        launchedAt: assignedAt,
+        launchedAt: new Date(),
         revision: { increment: 1 },
       },
     });

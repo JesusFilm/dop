@@ -1,22 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  chooseCoordinator,
   pickNextRoom,
   pickSmallestEligibleRoom,
   validateRoomConfiguration,
 } from "@/lib/gathering/assignment";
-
-const stableRandom = () => 0.25;
-
-describe("chooseCoordinator", () => {
-  it("chooses one member from the room", () => {
-    expect(chooseCoordinator(["a", "b", "c"], stableRandom)).toBe("a");
-  });
-
-  it("returns null for an empty room", () => {
-    expect(chooseCoordinator([], stableRandom)).toBeNull();
-  });
-});
 
 describe("pickNextRoom", () => {
   it("puts two participants in each room before ordinary round robin", () => {

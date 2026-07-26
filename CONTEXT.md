@@ -22,10 +22,10 @@ Use these terms in code, tests, issues, and product copy.
 - **Room** — a seeded, application-read-only physical space with a name,
   wayfinding directions, and optional maximum capacity. A finite maximum is at
   least two, and the configuration always includes an unlimited room.
-- **Coordinator** — one participant selected randomly in each non-empty room.
-  Any member can confirm an immediate takeover.
+- **Coordinator** — the first participant assigned to each non-empty room. Any
+  member can confirm an immediate takeover after launch.
 - **Launch** — the final transition that reveals existing assignments and
-  selects coordinators. It does not recalculate room membership.
+  coordinator identities. It does not recalculate room membership.
 - **Reset** — clears participants, requests, assignments, coordinators, and
   launch state while preserving room configuration.
 - **Room handoff** — the participant screen showing the room, directions,

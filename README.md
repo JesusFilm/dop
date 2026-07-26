@@ -3,8 +3,8 @@
 A mobile-first room-handoff app for one live, in-person Day of Prayer
 gathering. Participants join from one shared link, wait in a synchronized
 lobby, and receive an immediate hidden room assignment. The organizer monitors
-provisional rosters at `/admin`, then reveals assignments with a randomly
-selected coordinator.
+provisional rosters at `/admin`, then reveals assignments with each room’s
+first participant as coordinator.
 
 The guided prayer experience after people reach their rooms is intentionally
 deferred.
