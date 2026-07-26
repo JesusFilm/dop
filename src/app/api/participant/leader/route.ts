@@ -1,12 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { PARTICIPANT_COOKIE } from "@/lib/gathering/constants";
 import { GatheringError } from "@/lib/gathering/errors";
 import {
   assertSameOrigin,
   errorResponse,
   readJsonObject,
 } from "@/lib/gathering/http";
+import { participantCookieName } from "@/lib/gathering/participant-session";
 import { hashSessionToken } from "@/lib/gathering/session";
 import {
   getParticipantSnapshot,
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       );
     }
     const cookieStore = await cookies();
-    const token = cookieStore.get(PARTICIPANT_COOKIE)?.value;
+    const token = cookieStore.get(participantCookieName(request))?.value;
     if (!token) {
       throw new GatheringError(
         "Your participant session has expired.",

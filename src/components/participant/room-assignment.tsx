@@ -5,11 +5,9 @@ import {
   ArrowRight,
   BadgeCheck,
   CircleUserRound,
-  MapPin,
   PartyPopper,
 } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
-import { Avatar } from "@/components/ui/avatar";
 import { Modal } from "@/components/ui/modal";
 import type {
   ParticipantMember,
@@ -23,11 +21,10 @@ function MemberRow({ member }: { member: ParticipantMember }) {
     <li
       className={
         member.isLeader
-          ? "flex items-center gap-4 rounded-3xl bg-primary-soft p-4"
-          : "flex items-center gap-4 rounded-3xl bg-white p-4 shadow-card"
+          ? "rounded-3xl bg-primary-soft p-4"
+          : "rounded-3xl bg-white p-4 shadow-card"
       }
     >
-      <Avatar name={member.name} highlighted={member.isLeader} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-lg font-semibold text-ink">{member.name}</p>
         {member.isLeader ? (
@@ -45,14 +42,12 @@ export function RoomAssignment({
   snapshot,
   onTakeover,
   onStartJourney,
-  journeyName,
   isJourneyPending = false,
   journeyError = "",
 }: {
   snapshot: RoomSnapshot;
   onTakeover: () => Promise<void>;
   onStartJourney?: () => Promise<void>;
-  journeyName?: string;
   isJourneyPending?: boolean;
   journeyError?: string;
 }) {
@@ -63,6 +58,9 @@ export function RoomAssignment({
   const { participant: viewer, room } = snapshot;
   const leader = room.members.find(({ isLeader }) => isLeader);
   const viewerIsLeader = viewer.id === leader?.id;
+  const directions = room.directions
+    ? `${room.directions[0].toLowerCase()}${room.directions.slice(1)}`
+    : "follow the organizer’s directions";
 
   async function confirmTakeover() {
     setPending(true);
@@ -80,78 +78,53 @@ export function RoomAssignment({
 
   return (
     <>
-      <main className="mx-auto w-full max-w-2xl px-5 pb-16 pt-10 sm:px-8">
+      <main
+        className={`mx-auto w-full max-w-2xl px-5 pt-8 sm:px-8 ${
+          viewerIsLeader && onStartJourney ? "pb-48" : "pb-16"
+        }`}
+      >
         <header className="animate-fade-up text-center">
           <PartyPopper
             aria-hidden="true"
             className="mx-auto size-8 text-primary"
           />
-          <h1 className="mt-5 font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+          <h1 className="mt-3 font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
             Your group is ready.
           </h1>
-          <p className="mx-auto mt-4 max-w-lg text-lg leading-7 text-ink-muted">
+          <p className="mt-1 text-lg font-semibold text-primary">
+            {room.name}, {directions}
+          </p>
+          <p className="mx-auto mt-2 max-w-lg text-base leading-7 text-ink-muted">
             Please make your way to {room.name} and wait for the group to
             gather.
           </p>
         </header>
 
-        <section className="mt-10 rounded-[2rem] bg-surface-muted p-6 text-center shadow-card sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-muted">
-            Room name
-          </p>
-          <h2 className="mt-3 font-serif text-4xl font-bold text-ink">
-            {room.name}
-          </h2>
-          <div className="mt-6 flex items-start gap-3 rounded-2xl bg-white/70 p-4 text-left">
-            <MapPin
-              aria-hidden="true"
-              className="mt-0.5 size-5 shrink-0 text-primary"
-            />
-            <p className="leading-6 text-ink-muted">
-              {room.directions ||
-                "Follow the organizer’s directions to this room."}
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-12" aria-labelledby="gathering-heading">
-          <div className="flex items-end justify-between gap-4">
-            <h2
-              id="gathering-heading"
-              className="font-serif text-3xl font-bold text-ink"
-            >
-              Gathering
-            </h2>
-            <span className="text-sm text-ink-muted">
-              {room.members.length}{" "}
-              {room.members.length === 1 ? "member" : "members"}
-            </span>
-          </div>
-          <ul className="mt-6 flex flex-col gap-3">
+        <section className="mt-7" aria-label="Room members">
+          <ul className="flex flex-col gap-3">
             {room.members.map((member) => (
               <MemberRow key={member.id} member={member} />
             ))}
           </ul>
         </section>
 
-        <div className="mt-10 text-center">
-          {viewerIsLeader ? (
-            onStartJourney ? (
-              <div className="rounded-[2rem] bg-white p-6 shadow-card">
-                <p className="flex items-center justify-center gap-2 text-sm font-semibold text-primary">
+        {viewerIsLeader ? (
+          onStartJourney ? (
+            <div className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-white via-white/95 to-transparent px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-12 sm:px-8">
+              <div className="mx-auto w-full max-w-2xl">
+                <p className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold text-primary">
                   <BadgeCheck aria-hidden="true" className="size-4" />
                   You’re the room leader
                 </p>
-                <h2 className="mt-3 font-serif text-2xl font-bold text-ink">
-                  Start {journeyName ?? "the journey"} when everyone is ready.
-                </h2>
                 {journeyError ? (
-                  <p role="alert" className="mt-3 text-sm text-danger">
+                  <p
+                    role="alert"
+                    className="mb-3 text-center text-sm font-medium text-danger"
+                  >
                     {journeyError}
                   </p>
                 ) : null}
                 <ActionButton
-                  className="mt-5"
                   onClick={onStartJourney}
                   disabled={isJourneyPending}
                 >
@@ -159,21 +132,25 @@ export function RoomAssignment({
                   <ArrowRight aria-hidden="true" className="size-5" />
                 </ActionButton>
               </div>
-            ) : (
+            </div>
+          ) : (
+            <div className="mt-10 text-center">
               <p className="inline-flex items-center gap-2 rounded-full bg-primary-faint px-5 py-3 text-sm font-semibold text-primary">
                 <BadgeCheck aria-hidden="true" className="size-4" />
                 You’re the room leader
               </p>
-            )
-          ) : (
+            </div>
+          )
+        ) : (
+          <div className="mt-10 text-center">
             <button
               className="rounded-full px-4 py-3 text-sm font-semibold text-ink-muted underline decoration-outline underline-offset-4 transition hover:text-primary"
               onClick={() => setTakeoverOpen(true)}
             >
               Leader unavailable?
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <p className="sr-only" aria-live="polite">
           {announcement}

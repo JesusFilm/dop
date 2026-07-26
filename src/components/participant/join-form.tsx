@@ -8,10 +8,14 @@ import type { ParticipantSnapshot } from "@/lib/gathering/types";
 
 export function JoinForm({
   onJoined,
+  initialName = "",
+  endpoint = "/api/participant",
 }: {
   onJoined: (snapshot: ParticipantSnapshot) => void;
+  initialName?: string;
+  endpoint?: string;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [request, setRequest] = useState("");
   const [error, setError] = useState("");
   const [isPending, setPending] = useState(false);
@@ -28,7 +32,7 @@ export function JoinForm({
     setError("");
     setPending(true);
     try {
-      const response = await fetchWithTimeout("/api/participant", {
+      const response = await fetchWithTimeout(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

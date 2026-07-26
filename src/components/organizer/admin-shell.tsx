@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  FlaskConical,
   LayoutDashboard,
   Menu,
   PanelLeftClose,
@@ -13,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 
 type AdminShellProps = {
-  active: "dashboard" | "settings";
+  active: "dashboard" | "settings" | "tester";
   children: React.ReactNode;
 };
 
@@ -29,6 +30,12 @@ const navigation = [
     href: "/admin/settings",
     label: "Settings",
     icon: Settings,
+  },
+  {
+    id: "tester" as const,
+    href: "/admin/tester",
+    label: "Tester",
+    icon: FlaskConical,
   },
 ];
 

@@ -14,12 +14,18 @@ import { useLiveSnapshot } from "@/lib/use-live-snapshot";
 
 function JoinScreen({
   onJoined,
+  initialName,
+  endpoint,
+  homeHref,
 }: {
   onJoined: (snapshot: ParticipantSnapshot) => void;
+  initialName?: string;
+  endpoint: string;
+  homeHref: string;
 }) {
   return (
     <>
-      <ParticipantHeader />
+      <ParticipantHeader homeHref={homeHref} />
       <main className="relative mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-5xl items-center justify-center overflow-hidden px-5 py-12 sm:px-8">
         <div
           aria-hidden="true"
@@ -39,27 +45,51 @@ function JoinScreen({
           <p className="mx-auto mt-4 max-w-md text-lg leading-7 text-ink-muted">
             Enlightening the eyes of our hearts together.
           </p>
-          <JoinForm onJoined={onJoined} />
+          <JoinForm
+            onJoined={onJoined}
+            initialName={initialName}
+            endpoint={endpoint}
+          />
         </section>
       </main>
     </>
   );
 }
 
+export type ParticipantEndpoints = {
+  snapshot: string;
+  leader: string;
+  journeyAdvance: string;
+  journeyReassign: string;
+};
+
+const defaultEndpoints: ParticipantEndpoints = {
+  snapshot: "/api/participant",
+  leader: "/api/participant/leader",
+  journeyAdvance: "/api/participant/journey/advance",
+  journeyReassign: "/api/participant/journey/reassign",
+};
+
 export function ParticipantExperience({
   initialSnapshot,
+  initialName,
+  endpoints = defaultEndpoints,
+  homeHref = "/",
 }: {
   initialSnapshot: ParticipantSnapshot;
+  initialName?: string;
+  endpoints?: ParticipantEndpoints;
+  homeHref?: string;
 }) {
   const { snapshot, setSnapshot, isDisconnected } = useLiveSnapshot(
     initialSnapshot,
-    "/api/participant",
+    endpoints.snapshot,
   );
   const [isJourneyPending, setJourneyPending] = useState(false);
   const [journeyError, setJourneyError] = useState("");
 
   async function takeOver() {
-    const response = await fetchWithTimeout("/api/participant/leader", {
+    const response = await fetchWithTimeout(endpoints.leader, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ expectedRevision: snapshot.revision }),
@@ -72,17 +102,14 @@ export function ParticipantExperience({
     setJourneyPending(true);
     setJourneyError("");
     try {
-      const response = await fetchWithTimeout(
-        "/api/participant/journey/advance",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expectedState,
-            expectedRevision: snapshot.revision,
-          }),
-        },
-      );
+      const response = await fetchWithTimeout(endpoints.journeyAdvance, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedState,
+          expectedRevision: snapshot.revision,
+        }),
+      });
       const result = (await response.json()) as ParticipantSnapshot & {
         error?: string;
       };
@@ -105,17 +132,14 @@ export function ParticipantExperience({
     setJourneyPending(true);
     setJourneyError("");
     try {
-      const response = await fetchWithTimeout(
-        "/api/participant/journey/reassign",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expectedState,
-            expectedRevision: snapshot.revision,
-          }),
-        },
-      );
+      const response = await fetchWithTimeout(endpoints.journeyReassign, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedState,
+          expectedRevision: snapshot.revision,
+        }),
+      });
       const result = (await response.json()) as {
         snapshot?: ParticipantSnapshot;
         reassigned?: boolean;
@@ -150,10 +174,15 @@ export function ParticipantExperience({
         </div>
       ) : null}
       {snapshot.state === "JOIN" ? (
-        <JoinScreen onJoined={setSnapshot} />
+        <JoinScreen
+          onJoined={setSnapshot}
+          initialName={initialName}
+          endpoint={endpoints.snapshot}
+          homeHref={homeHref}
+        />
       ) : snapshot.state === "LOBBY" ? (
         <>
-          <ParticipantHeader />
+          <ParticipantHeader homeHref={homeHref} />
           <LobbyStatus
             name={snapshot.participant.name}
             participantCount={snapshot.participantCount}
@@ -162,6 +191,7 @@ export function ParticipantExperience({
       ) : snapshot.journey?.state === "ACTIVE" ? (
         <>
           <ParticipantHeader
+            homeHref={homeHref}
             trailing={
               <Countdown
                 startedAt={snapshot.journey.module.startedAt}
@@ -183,23 +213,18 @@ export function ParticipantExperience({
         </>
       ) : snapshot.journey?.state === "COMPLETED" ? (
         <>
-          <ParticipantHeader />
+          <ParticipantHeader homeHref={homeHref} />
           <CompletedState snapshot={snapshot} />
         </>
       ) : (
         <>
-          <ParticipantHeader />
+          <ParticipantHeader homeHref={homeHref} />
           <RoomAssignment
             snapshot={snapshot}
             onTakeover={takeOver}
             onStartJourney={
               snapshot.journey?.state === "GATHERING"
                 ? () => advanceJourney(snapshot.journey!.expectedState)
-                : undefined
-            }
-            journeyName={
-              snapshot.journey?.state === "GATHERING"
-                ? snapshot.journey.journeyName
                 : undefined
             }
             isJourneyPending={isJourneyPending}

@@ -1,14 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import {
-  PARTICIPANT_COOKIE,
-  PARTICIPANT_COOKIE_MAX_AGE_SECONDS,
-} from "@/lib/gathering/constants";
+import { PARTICIPANT_COOKIE_MAX_AGE_SECONDS } from "@/lib/gathering/constants";
 import {
   assertSameOrigin,
   errorResponse,
   readJsonObject,
 } from "@/lib/gathering/http";
+import { participantCookieName } from "@/lib/gathering/participant-session";
 import { createSessionToken, hashSessionToken } from "@/lib/gathering/session";
 import {
   getParticipantSnapshot,
@@ -17,10 +15,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get(PARTICIPANT_COOKIE)?.value;
+    const token = cookieStore.get(participantCookieName(request))?.value;
     const snapshot = await getParticipantSnapshot(
       token ? hashSessionToken(token) : undefined,
     );
@@ -37,7 +35,8 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const body = await readJsonObject(request);
     const cookieStore = await cookies();
-    const rememberedToken = cookieStore.get(PARTICIPANT_COOKIE)?.value;
+    const cookieName = participantCookieName(request);
+    const rememberedToken = cookieStore.get(cookieName)?.value;
     const token = rememberedToken ?? createSessionToken();
 
     await joinParticipant({
@@ -49,7 +48,7 @@ export async function POST(request: Request) {
 
     const snapshot = await getParticipantSnapshot(hashSessionToken(token));
     const response = NextResponse.json(snapshot, { status: 201 });
-    response.cookies.set(PARTICIPANT_COOKIE, token, {
+    response.cookies.set(cookieName, token, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
