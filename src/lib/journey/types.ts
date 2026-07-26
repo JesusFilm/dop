@@ -1,5 +1,11 @@
+import type {
+  ShortStudyConfiguration,
+  ShortStudyContribution,
+} from "@/lib/journey/short-study";
+
 export type JourneyModulePayloads = {
   "test-guided-prayer": { prompt: string };
+  "short-study": ShortStudyConfiguration;
 };
 
 export type JourneyBehaviorKey = keyof JourneyModulePayloads;
@@ -29,3 +35,20 @@ export type ValidJourney = {
   name: string;
   modules: ValidJourneyModule[];
 };
+
+export type ShortStudyPresentation = {
+  contribution: ShortStudyContribution;
+  contributionNumber: number;
+  contributionCount: number;
+  reader: { id: string; name: string } | null;
+  viewerRole: "leader" | "reader" | "member";
+  canReassign: boolean;
+};
+
+export type PresentedJourneyModule =
+  | Extract<JourneyClientModule, { behaviorKey: "test-guided-prayer" }>
+  | {
+      behaviorKey: "short-study";
+      configuration: { translation: string };
+      shortStudy: ShortStudyPresentation;
+    };

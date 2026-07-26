@@ -3,8 +3,9 @@ import type {
   JourneyClientModule,
   JourneyModuleDefinition,
 } from "@/lib/journey/types";
+import { validateShortStudyConfiguration } from "@/lib/journey/short-study";
 
-const productionModuleKeys: readonly JourneyBehaviorKey[] = [];
+const productionModuleKeys: readonly JourneyBehaviorKey[] = ["short-study"];
 
 const moduleDefinitions: {
   [Key in JourneyBehaviorKey]: JourneyModuleDefinition<Key>;
@@ -20,6 +21,9 @@ const moduleDefinitions: {
       }
       return { prompt: configuration.prompt };
     },
+  },
+  "short-study": {
+    validateConfiguration: validateShortStudyConfiguration,
   },
 };
 

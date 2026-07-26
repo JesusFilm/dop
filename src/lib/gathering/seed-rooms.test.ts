@@ -62,7 +62,7 @@ describe("seedInitialRooms", () => {
     });
   });
 
-  it("does not change room configuration after launch", async () => {
+  it("skips room configuration after launch", async () => {
     const createMany = vi.fn();
     const transaction = {
       gathering: {
@@ -74,9 +74,7 @@ describe("seedInitialRooms", () => {
       $transaction: vi.fn(async (operation) => operation(transaction)),
     } as unknown as PrismaClient;
 
-    await expect(seedInitialRooms(database)).rejects.toThrow(
-      "Cannot seed rooms after the gathering has launched.",
-    );
+    await expect(seedInitialRooms(database)).resolves.toBe(0);
     expect(createMany).not.toHaveBeenCalled();
   });
 });

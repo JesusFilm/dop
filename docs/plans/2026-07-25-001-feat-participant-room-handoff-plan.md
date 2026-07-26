@@ -16,7 +16,7 @@ execution: code
 
 - **Objective:** Refine the production participant arrival, hidden assignment, organizer monitoring, reveal, and room-handoff experience for one in-person Day of Prayer gathering.
 - **Product authority:** This plan records the room-based direction confirmed by the product owner. It supersedes the incompatible pair-matching behavior in `CONTEXT.md` and `docs/prayer-activity-spec.md` for this work while preserving the platform decision in `docs/adr/0001-nextjs-on-railway.md`.
-- **Active boundary:** This work ends when each participant knows their room, fellow group members, and current room coordinator.
+- **Active boundary:** This work ends when each participant knows their room, fellow group members, and current room leader.
 - **Open blockers:** None.
 - **Execution profile:** Deep software feature spanning persistent state, concurrent mutations, participant identity, and synchronized participant and organizer surfaces.
 - **Stop conditions:** Stop if implementation evidence invalidates a session-settled product decision or if prayer requests would cross into an organizer-visible response.
@@ -29,7 +29,7 @@ execution: code
 ### Summary
 
 Create one live Day of Prayer gathering where participants join by name, receive a hidden deterministic room assignment immediately, wait together, and see that assignment when the organizer launches the reveal.
-The first participant assigned to each room becomes its coordinator, while the organizer can monitor live provisional rosters and reset the gathering for another run.
+The first participant assigned to each room becomes its leader, while the organizer can monitor live provisional rosters and reset the gathering for another run.
 
 ### Problem Frame
 
@@ -47,8 +47,8 @@ The Stitch output establishes the visual direction, but the application now need
 - **Seed each room with two participants before ordinary round robin.** (session-settled: user-directed — chosen over one-at-a-time balancing from the start: viable two-person groups should form before the algorithm advances.) Governs R10, R13.
 - **Keep seeded rooms immutable in the application.** (session-settled: user-directed — chosen over organizer room creation, editing, and deletion: room configuration is controlled outside the event-day interface.) Governs R9, R10, R11, R19, R25.
 - **Use launch only to reveal and finalize hidden assignments.** (session-settled: user-directed — chosen over assigning the waiting roster at launch: the organizer should see assignments as participants arrive while participants wait for a shared reveal.) Governs R6, R11, R14, R15, R18.
-- **Make the first participant assigned to a room its coordinator.** (session-settled: user-directed — chosen over random selection at reveal: coordinator responsibility should follow join order.) Governs R14.
-- **Allow immediate coordinator takeover.** (session-settled: user-directed — chosen over coordinator approval or group confirmation: an unavailable coordinator must not block the room.) Governs R20, R21.
+- **Make the first participant assigned to a room its leader.** (session-settled: user-directed — chosen over random selection at reveal: leader responsibility should follow join order.) Governs R14.
+- **Allow immediate leader takeover.** (session-settled: user-directed — chosen over leader approval or group confirmation: an unavailable leader must not block the room.) Governs R20, R21.
 - **Collect personal prayer requests before the room experience exists.** (session-settled: user-directed — chosen over deferring collection: requests should be retained privately for the later experience.) Governs R2, R3, R18, R25.
 - **Reset the gathering without rebuilding room setup.** (session-settled: user-directed — chosen over a single-use gathering: the team expects to run load tests and reuse the configured rooms.) Governs R24, R25, R26.
 - **Prove the release with 50 concurrent participants.** (session-settled: user-directed — chosen over larger speculative scale targets: 50 matches the expected event size.) Governs R27.
@@ -61,20 +61,20 @@ This plan owns the participant journey from opening the shared link through reac
 The following breakdown is the current understanding, not a committed roadmap:
 
 - **Guided room experience**
-  - **Depends on** this work for stable room membership, coordinator identity, and retained personal prayer requests.
+  - **Depends on** this work for stable room membership, leader identity, and retained personal prayer requests.
   - **Still to decide:** prayer stages, request presentation, timing, and completion.
 - **Corporate and ministry prayer-request management**
   - **Can proceed independently of** the room handoff.
   - **Enables** the later room experience by supplying requests for distribution among rooms.
 - **Synchronized room progression**
   - **Depends on** the future guided room experience.
-  - **Carries forward** the direction that every member sees the same current screen while only the coordinator advances it.
+  - **Carries forward** the direction that every member sees the same current screen while only the leader advances it.
 
 ### Actors
 
-- A1. **Participant:** Joins from a personal device, waits for the assignment reveal, travels to the assigned room, and may take over as coordinator.
-- A2. **Room coordinator:** The first participant assigned to a room, whose current identity is shared with every member after reveal.
-- A3. **Organizer:** Monitors arrivals and provisional rosters, launches the shared reveal, reviews coordinators, and resets the gathering.
+- A1. **Participant:** Joins from a personal device, waits for the assignment reveal, travels to the assigned room, and may take over as leader.
+- A2. **Room leader:** The first participant assigned to a room, whose current identity is shared with every member after reveal.
+- A3. **Organizer:** Monitors arrivals and provisional rosters, launches the shared reveal, reviews leaders, and resets the gathering.
 
 ### Requirements
 
@@ -102,27 +102,27 @@ The following breakdown is the current understanding, not a committed roadmap:
 
 - R12. Joining is blocked with a configuration error only when the seeded room invariant is broken; a valid configuration can always accept another participant because at least one room is unlimited.
 - R13. Assignment follows participant join order and seeded room order: place two participants into a room before advancing to the next room, then continue one participant per eligible room in round-robin order, dropping each finite room once it reaches capacity.
-- R14. The first participant assigned to each non-empty room becomes its coordinator; the identity remains hidden until reveal.
+- R14. The first participant assigned to each non-empty room becomes its leader; the organizer sees that identity immediately while participants see it only after reveal.
 - R15. Launch reveals hidden assignments and makes every existing participant's room final without recalculating the waiting roster.
-- R16. A participant who joins after launch is assigned automatically to the first configured room among the currently smallest eligible rooms. Existing coordinators are preserved; if the selected room is empty, the late participant becomes its coordinator.
+- R16. A participant who joins after launch is assigned automatically to the first configured room among the currently smallest eligible rooms. Existing leaders are preserved; if the selected room is empty, the late participant becomes its leader.
 
 **Organizer operation**
 
 - R17. The organizer experience is available at `/admin` without authentication or a PIN; `/organizer` is not retained as a compatibility route.
-- R18. Before reveal, the organizer can inspect live provisional rosters; after reveal, the organizer also sees each current coordinator, and neither view exposes prayer requests.
+- R18. Before and after reveal, the organizer can inspect live provisional rosters and see each current leader; neither view exposes prayer requests.
 - R19. The organizer cannot create, edit, or delete rooms, remove participants, move participants between rooms, or correct assignments before or after reveal.
 
-**Coordinator resilience and room handoff**
+**Leader resilience and room handoff**
 
-- R20. Every room member sees the current coordinator's name on the room-handoff screen.
-- R21. Any room member can take over as coordinator after confirming the action, and the new coordinator becomes visible to every room member without approval from the previous coordinator.
-- R22. After reveal, each participant sees the room name, wayfinding description, fellow members, coordinator, and a clear instruction to gather there.
+- R20. Every room member sees the current leader's name on the room-handoff screen.
+- R21. Any room member can take over as leader after confirming the action, and the new leader becomes visible to every room member without approval from the previous leader.
+- R22. After reveal, each participant sees the room name, wayfinding description, fellow members, leader, and a clear instruction to gather there.
 - R23. The participant experience stops at room handoff and does not present prayer requests or the guided prayer journey.
 
 **Reset and event readiness**
 
 - R24. The organizer can reset the gathering after a standard confirmation dialog.
-- R25. Reset preserves room names, descriptions, and capacities while clearing participants, prayer requests, assignments, coordinators, and launch state.
+- R25. Reset preserves room names, descriptions, and capacities while clearing participants, prayer requests, assignments, leaders, and launch state.
 - R26. Connected participant screens return to the join state after reset.
 - R27. The complete join-through-handoff experience remains usable and synchronized with 50 concurrent participants.
 
@@ -138,8 +138,8 @@ flowchart TB
   Organizer --> Launch{"Launch reveal"}
   Lobby --> Launch
   Lobby -.-> Reset
-  Launch --> Coordinator["First assigned participant revealed as coordinator"]
-  Coordinator --> Handoff["Everyone sees room, members, and coordinator"]
+  Launch --> Leader["First assigned participant revealed as leader"]
+  Leader --> Handoff["Everyone sees room, members, and leader"]
   Late["Participant joins after reveal"] --> Eligible["First configured smallest eligible room"]
   Eligible --> Handoff
   Handoff --> Takeover{"Member takes over?"}
@@ -161,28 +161,28 @@ flowchart TB
   - **Trigger:** The organizer opens `/admin` while participants are joining.
   - **Actors:** A3
   - **Steps:** The organizer reviews read-only room configuration and live provisional rosters, then confirms reveal.
-  - **Outcome:** Existing room membership is revealed unchanged with the first assigned participant as each non-empty room's coordinator.
+  - **Outcome:** Existing room membership is revealed unchanged with the first assigned participant as each non-empty room's leader.
   - **Covers:** R9, R10, R11, R12, R13, R14, R15, R17.
 
 - F3. Participant receives the room handoff
   - **Trigger:** The organizer launches the reveal.
   - **Actors:** A1, A2
-  - **Steps:** The lobby transitions to the room-handoff screen, where each member sees the same room identity, membership, coordinator, and directions.
+  - **Steps:** The lobby transitions to the room-handoff screen, where each member sees the same room identity, membership, leader, and directions.
   - **Outcome:** Participants can find the room and recognize their group without organizer intervention.
   - **Covers:** R7, R20, R22, R23.
 
 - F4. Late participant joins
   - **Trigger:** A new participant submits the join form after launch.
   - **Actors:** A1
-  - **Steps:** The gathering selects the first configured room among the currently smallest rooms with remaining capacity and assigns the participant, making them coordinator only when that room was empty.
-  - **Outcome:** The participant receives a room immediately without changing any existing assignment or existing coordinator.
+  - **Steps:** The gathering selects the first configured room among the currently smallest rooms with remaining capacity and assigns the participant, making them leader only when that room was empty.
+  - **Outcome:** The participant receives a room immediately without changing any existing assignment or existing leader.
   - **Covers:** R13, R15, R16.
 
 - F5. A member takes over coordination
-  - **Trigger:** The selected coordinator is unavailable or another member needs to lead.
+  - **Trigger:** The selected leader is unavailable or another member needs to lead.
   - **Actors:** A1, A2
   - **Steps:** A member chooses to take over and confirms the action.
-  - **Outcome:** The member becomes coordinator and every room member sees the updated identity.
+  - **Outcome:** The member becomes leader and every room member sees the updated identity.
   - **Covers:** R20, R21.
 
 - F6. Organizer monitors or resets the gathering
@@ -206,7 +206,7 @@ flowchart TB
   - **When:** Thirty-seven participants join in sequence.
   - **Then:** Every participant immediately receives exactly one hidden room, the organizer sees sizes seven, six, six, six, six, and six in configured order, and participants remain in the lobby until reveal.
   - **When:** The organizer launches the reveal.
-  - **Then:** Membership remains unchanged, participants see their rooms, and each room’s first assigned participant is revealed as its coordinator.
+  - **Then:** Membership remains unchanged, participants see their rooms, and each room’s first assigned participant is revealed as its leader.
 
 - AE3. A finite room falls out of round robin
   - **Covers:** R10, R13.
@@ -218,25 +218,25 @@ flowchart TB
   - **Covers:** R15, R16.
   - **Given:** Assignments have been revealed and the seeded configuration includes an unlimited room.
   - **When:** A new participant joins.
-  - **Then:** They enter the first configured room among the currently smallest eligible rooms without moving another participant or replacing an existing coordinator; if that room was empty, they become its coordinator.
+  - **Then:** They enter the first configured room among the currently smallest eligible rooms without moving another participant or replacing an existing leader; if that room was empty, they become its leader.
 
-- AE5. Coordinator does not arrive
+- AE5. Leader does not arrive
   - **Covers:** R20, R21.
-  - **Given:** The first participant assigned as coordinator is unavailable.
-  - **When:** Another member confirms coordinator takeover.
-  - **Then:** That member becomes coordinator and every room member sees the updated name.
+  - **Given:** The first participant assigned as leader is unavailable.
+  - **When:** Another member confirms leader takeover.
+  - **Then:** That member becomes leader and every room member sees the updated name.
 
 - AE6. Organizer reviews rooms before and after reveal
   - **Covers:** R3, R18, R19.
   - **Given:** Participants have been assigned and some submitted prayer requests.
   - **When:** The organizer expands a room before reveal.
-  - **Then:** They see provisionally assigned participant names but no coordinator, prayer-request content, or assignment controls.
+  - **Then:** They see provisionally assigned participant names and the current leader, but no prayer-request content or assignment controls.
   - **When:** The organizer expands the same room after reveal.
-  - **Then:** They also see the current coordinator without any room or participant mutation controls.
+  - **Then:** The same leader remains visible without any room or participant mutation controls.
 
 - AE7. Organizer resets after a load test
   - **Covers:** R24, R25, R26.
-  - **Given:** A launched gathering has configured rooms, joined participants, requests, assignments, and coordinators.
+  - **Given:** A launched gathering has configured rooms, joined participants, requests, assignments, and leaders.
   - **When:** The organizer accepts the standard reset confirmation.
   - **Then:** Room configuration remains, all gathering data is cleared, and connected participant screens return to joining.
 
@@ -246,14 +246,14 @@ flowchart TB
 - Every joined participant immediately has exactly one hidden room, the first two seats of each room fill in configured order, and no room exceeds its maximum.
 - Organizer, lobby, and room-handoff views converge on the current gathering state without participants manually refreshing.
 - Same-device participants recover their current state after an ordinary reload or transient disconnect.
-- A 50-participant load run completes joining, launch, room reveal, coordinator takeover, late arrival, and reset without lost or contradictory state.
+- A 50-participant load run completes joining, launch, room reveal, leader takeover, late arrival, and reset without lost or contradictory state.
 - Personal prayer requests never appear in the organizer experience.
 
 ### Scope Boundaries
 
-- The guided room prayer experience begins after this work and is deferred per R23.
+- The guided room prayer experience began after this work and was deferred per R23; synchronized progression was subsequently delivered by the Short Study journey module plan.
 - Presentation and allocation of personal, corporate, and ministry prayer requests inside rooms are deferred.
-- Synchronized prayer stages and coordinator-only progression controls are deferred.
+- Additional prayer stages beyond the Short Study and their presentation rules remain deferred.
 - Organizer authentication and access control are intentionally outside this release.
 - Participant accounts, cross-device recovery, participant removal, manual room moves, and post-launch assignment correction are outside this release.
 - Multiple simultaneous gatherings, event history, messaging, notifications, analytics, and post-event follow-up are outside this release.
@@ -287,7 +287,7 @@ flowchart TB
 - KTD2. **Use App Router Route Handlers as the browser mutation and snapshot boundary.** Server-rendered pages provide the initial state, while no-store audience-specific handlers support joins, polling, reveal, takeover, and reset without exposing room mutation endpoints or introducing a second service. Same-origin checks protect state-changing requests from cross-site submission. (session-settled: user-directed — chosen over treating the Stitch export as a client-only prototype: the user asked for a production Next.js App Router implementation.) Governs R1, R7, R9, R17, R24.
 - KTD3. **Represent same-device identity with an opaque HttpOnly cookie.** The browser holds a high-entropy token while PostgreSQL stores only its digest, so URLs and client-visible data do not become participant credentials. (session-settled: user-directed — chosen over accounts or recovery codes: device changes can be handled manually for this event.) Governs R1, R4, R5.
 - KTD4. **Synchronize by polling authoritative snapshots rather than keeping process-local live state.** A shared client hook polls every second while the page is visible, backs off after failures, keeps hidden assignments in lobby state, and redirects when the gathering phase reveals a participant's room. This remains correct across Railway restarts and avoids a premature WebSocket or pub/sub dependency for the room-handoff boundary and 50-participant target; transport for a later guided room experience remains a separate decision. Governs R6, R7, R8, R15, R16, R18, R20, R21, R26, R27.
-- KTD5. **Serialize lifecycle mutations in PostgreSQL.** Joins, reveal, late joins, takeover, and reset run through a domain service using atomic transactions under a row lock on the active gathering, with bounded retry for database write conflicts, so concurrent requests converge on one deterministic assignment and coordinator state. Seeded room order is the existing creation-time order with ID as a stable tie-break; fill the first room below two, then choose the first smallest eligible room, so no cursor state is required. (session-settled: user-directed — chosen over a randomized batch allocator or persisted round-robin cursor: immutable room order and append-only joins make the deterministic next room derivable.) Governs R7, R10, R12, R13, R14, R15, R16, R21, R24, R25.
+- KTD5. **Serialize lifecycle mutations in PostgreSQL.** Joins, reveal, late joins, takeover, and reset run through a domain service using atomic transactions under a row lock on the active gathering, with bounded retry for database write conflicts, so concurrent requests converge on one deterministic assignment and leader state. Seeded room order is the existing creation-time order with ID as a stable tie-break; fill the first room below two, then choose the first smallest eligible room, so no cursor state is required. (session-settled: user-directed — chosen over a randomized batch allocator or persisted round-robin cursor: immutable room order and append-only joins make the deterministic next room derivable.) Governs R7, R10, R12, R13, R14, R15, R16, R21, R24, R25.
 - KTD6. **Build separate participant and organizer projections.** Shared domain state is mapped through explicit response serializers, participant projections suppress room details while forming, organizer queries expose provisional rosters but never select prayer-request content, and request values are excluded from application logs and error details. Governs R3, R6, R11, R18, R22, R23.
 - KTD7. **Retain the Stitch composition through shared Tailwind components.** Existing participant and organizer surfaces become data-driven while common status, room, member, modal, and action primitives prevent repeated page-specific behavior. (session-settled: user-directed — chosen over duplicating the exported screens page by page: the user asked for DRY components and Tailwind.) Governs R6, R11, R18, R20, R22, R23.
 - KTD8. **Prove event scale through a repeatable HTTP load scenario.** A guarded script uses the existing seeded room configuration and exercises 50 concurrent joins, live provisional rosters, reveal, room handoff, takeover, late arrival, and reset against a dedicated test deployment or local server. Governs R27.
@@ -316,7 +316,7 @@ stateDiagram-v2
   [*] --> Forming
   Forming --> Forming: participant joins and receives hidden assignment
   Forming --> Assigned: organizer confirms reveal
-  Assigned --> Assigned: late join or coordinator takeover
+  Assigned --> Assigned: late join or leader takeover
   Assigned --> Forming: organizer confirms reset
   Forming --> Forming: organizer confirms reset
 ```
@@ -378,7 +378,7 @@ stateDiagram-v2
 
 **Approach:**
 
-1. Model the active gathering phase and revision, immutable seeded room configuration, per-run participants, hidden assignments, and current room coordinator.
+1. Model the active gathering phase and revision, immutable seeded room configuration, per-run participants, hidden assignments, and current room leader.
 2. Enforce that finite room capacities are at least two while retaining the existing requirement for at least one unlimited room.
 3. Preserve optional personal requests as encrypted server-only participant data and define reset-compatible foreign-key behavior.
 4. Update the root domain context and ADR to describe immediate hidden assignment, immutable seeded rooms, and reveal-only launch.
@@ -391,7 +391,7 @@ stateDiagram-v2
 
 1. A fresh database accepts the migration and can create the active gathering plus valid seeded rooms and participants.
 2. A finite room capacity below two is rejected by the persistence invariant.
-3. Deleting a participant cannot leave an invalid coordinator reference.
+3. Deleting a participant cannot leave an invalid leader reference.
 4. Clearing per-run participant data leaves room names, descriptions, and capacities intact.
 5. A participant row can hold an optional prayer request without any organizer projection being defined in the persistence layer.
 6. Prayer-request encryption round-trips with the configured key, rejects tampered ciphertext, and fails without exposing plaintext when the key is missing or wrong.
@@ -400,7 +400,7 @@ stateDiagram-v2
 
 ### U2. Implement immediate deterministic assignment and reveal behavior
 
-**Goal:** Make immediate hidden assignment, reveal, late arrival, coordinator takeover, and reset one transactional domain.
+**Goal:** Make immediate hidden assignment, reveal, late arrival, leader takeover, and reset one transactional domain.
 
 **Requirements:** R2, R9, R10, R11, R12, R13, R14, R15, R16, R19, R21, R24, R25; F2, F4, F5, F6; AE2, AE3, AE4, AE5, AE7; KTD5
 
@@ -412,7 +412,7 @@ stateDiagram-v2
 
 1. Replace randomized batch balancing with a pure deterministic next-room selector that fills the first configured room below two, then chooses the first smallest eligible room and ignores rooms at capacity.
 2. Assign every participant inside the serialized join transaction, recording the room immediately without exposing it through the participant projection while forming.
-3. Make the first participant assigned to each room its coordinator, keep that identity hidden until launch reveals existing memberships, and make late arrivals use the same deterministic smallest-eligible ordering while preserving existing coordinators.
+3. Make the first participant assigned to each room its leader, expose that identity immediately to the organizer while keeping it hidden from participants until launch, and make late arrivals use the same deterministic smallest-eligible ordering while preserving existing leaders.
 4. Remove room mutation operations from the event-day domain service.
 
 **Execution note:** Start with failing domain tests for AE2, AE3, AE4, AE5, and AE7, then add PostgreSQL-backed concurrency coverage.
@@ -426,9 +426,9 @@ stateDiagram-v2
 3. Covers AE3. Twelve joins with capacities two, unlimited, and unlimited produce room sizes two, five, and five, and the finite room receives no participant after reaching two.
 4. A join against missing rooms, a finite capacity below two, or a configuration without an unlimited room returns a configuration error without creating an unassigned participant.
 5. Two concurrent joins serialize into distinct deterministic assignment slots.
-6. Two concurrent reveal attempts preserve one committed first-participant coordinator set without moving any participant.
-7. Covers AE4. Concurrent late joins each receive the first configured room among the smallest eligible rooms without moving existing members or replacing a coordinator; a late join entering an empty room becomes its coordinator.
-8. Covers AE5. A member of the room can become its sole coordinator, while a participant from another room is rejected.
+6. Two concurrent reveal attempts preserve one committed first-participant leader set without moving any participant.
+7. Covers AE4. Concurrent late joins each receive the first configured room among the smallest eligible rooms without moving existing members or replacing a leader; a late join entering an empty room becomes its leader.
+8. Covers AE5. A member of the room can become its sole leader, while a participant from another room is rejected.
 9. Covers AE7. Reset clears run data and returns the gathering to forming while preserving seeded room configuration.
 10. The domain service exposes no room or participant mutation operation beyond joining, takeover, reveal, and reset.
 
@@ -442,7 +442,7 @@ stateDiagram-v2
 
 **Dependencies:** U2
 
-**Files:** `src/lib/gathering/session.ts`, `src/lib/gathering/session.test.ts`, `src/lib/gathering/types.ts`, `src/lib/gathering/http.ts`, `src/app/api/participant/route.ts`, `src/app/api/participant/coordinator/route.ts`, `src/app/api/organizer/route.ts`, `src/app/api/organizer/launch/route.ts`, `src/app/api/organizer/reset/route.ts`, `src/app/api/gathering-routes.test.ts`, `src/test/setup.ts`, `vitest.config.ts`, `package.json`, `pnpm-lock.yaml`
+**Files:** `src/lib/gathering/session.ts`, `src/lib/gathering/session.test.ts`, `src/lib/gathering/types.ts`, `src/lib/gathering/http.ts`, `src/app/api/participant/route.ts`, `src/app/api/participant/leader/route.ts`, `src/app/api/organizer/route.ts`, `src/app/api/organizer/launch/route.ts`, `src/app/api/organizer/reset/route.ts`, `src/app/api/gathering-routes.test.ts`, `src/test/setup.ts`, `vitest.config.ts`, `package.json`, `pnpm-lock.yaml`
 
 **Approach:**
 
@@ -462,7 +462,7 @@ stateDiagram-v2
 3. A name containing only whitespace is rejected, while internal whitespace is normalized.
 4. Empty, malformed, and oversized payloads are rejected without changing gathering state.
 5. A cross-origin mutation request is rejected without changing gathering state.
-6. Covers AE6. Organizer snapshots include names, rooms, counts, provisional membership, and post-reveal coordinator identity but contain no prayer-request key or submitted request value.
+6. Covers AE6. Organizer snapshots include names, rooms, counts, provisional membership, and leader identity before and after reveal but contain no prayer-request key or submitted request value.
 7. A forming participant with a stored room receives only lobby state; the same participant receives room-handoff data after reveal.
 8. Domain conflicts and validation failures return expected errors without credentials, raw database details, or prayer content.
 9. Server logs and structured errors contain no prayer-request values or participant session tokens.
@@ -484,7 +484,7 @@ stateDiagram-v2
 
 1. Resolve the participant cookie in Server Components and render the correct initial join, lobby, or room state without query-string identity.
 2. Centralize visible-page polling, retry, revision comparison, and reset/reveal navigation in one reusable hook.
-3. Keep the Stitch-derived join, lobby, room reveal, roster, coordinator label, and takeover confirmation composition while replacing sample data with typed snapshots.
+3. Keep the Stitch-derived join, lobby, room reveal, roster, leader label, and takeover confirmation composition while replacing sample data with typed snapshots.
 4. Remove development preview links and the demo gathering module once production paths cover each screen.
 
 **Execution note:** Characterize the existing visible labels and accessibility behavior before replacing data flow, then add interaction coverage for automatic state transitions.
@@ -496,8 +496,8 @@ stateDiagram-v2
 1. A new device sees the join form and can submit a normalized name with or without a prayer request.
 2. Covers AE1. A remembered participant returns directly to their current lobby or assigned room.
 3. The lobby displays the live joined count without leaking the stored assignment, then moves to the room handoff after reveal without manual refresh.
-4. The room handoff displays the assigned room, directions, complete roster, and current coordinator without prayer content or guided-stage controls.
-5. Covers AE5. Confirming takeover updates the current coordinator for all polling room members.
+4. The room handoff displays the assigned room, directions, complete roster, and current leader without prayer content or guided-stage controls.
+5. Covers AE5. Confirming takeover updates the current leader for all polling room members.
 6. After reset, a connected lobby or room screen returns to the join state.
 7. Polling pauses while the document is hidden, retries after a transient failure, and resumes with the latest revision.
 8. During a transient polling failure, the participant keeps the last valid screen and sees a non-blocking reconnecting status.
@@ -519,7 +519,7 @@ stateDiagram-v2
 1. Server-render the initial organizer snapshot at `/admin` and reuse the shared polling hook for joined count, provisional assignments, reveal, takeover, late-arrival, and reset changes.
 2. Render seeded room name, directions, maximum, and live roster as read-only in both gathering phases.
 3. Remove room create, edit, and delete controls and their API client calls; do not retain `/organizer` as a compatibility route.
-4. Reveal coordinator labels after launch while exposing no move, participant removal, or prayer-request affordance.
+4. Reveal leader labels after launch while exposing no move, participant removal, or prayer-request affordance.
 5. Retain the standard reset confirmation that preserves seeded room configuration and announces the destructive run-data effect.
 
 **Execution note:** Protect the organizer response shape and disabled-state rules with component tests before integrating browser mutations.
@@ -530,9 +530,9 @@ stateDiagram-v2
 
 1. `/admin` renders each seeded room and capacity without any create, edit, or delete control, while `/organizer` is absent.
 2. Covers AE2 and AE3. Before reveal, room cards show live deterministic rosters as participants join.
-3. Reveal leaves membership unchanged and adds coordinator labels to non-empty rooms.
-4. Covers AE6. Room cards expose display names and current coordinator when applicable without prayer content or assignment controls.
-5. Late arrivals and coordinator takeover appear through polling without a page reload.
+3. Reveal leaves membership unchanged and adds leader labels to non-empty rooms.
+4. Covers AE6. Room cards expose display names and current leader when applicable without prayer content or assignment controls.
+5. Late arrivals and leader takeover appear through polling without a page reload.
 6. Covers AE7. Standard reset confirmation clears run data, retains seeded rooms, and returns the dashboard to forming.
 7. No organizer credential, PIN, room mutation, participant removal, or room-move control is rendered.
 8. Empty-room, configuration-error, mutation-failure, and reconnecting states preserve the organizer's last valid snapshot and explain the available recovery action.
@@ -566,7 +566,7 @@ stateDiagram-v2
 
 1. The script refuses to start without an explicit target and destructive-reset opt-in.
 2. Fifty concurrent joins receive distinct participant cookies, immediate valid assignments, and all appear in organizer rosters while participant snapshots remain in lobby state.
-3. Reveal changes no membership and converges every participant on exactly one visible room with one coordinator per non-empty room.
+3. Reveal changes no membership and converges every participant on exactly one visible room with one leader per non-empty room.
 4. Takeover, one late join, and reset converge across participant and organizer snapshots.
 5. Script logs contain no prayer-request values or participant session tokens.
 6. Build and database checks pass against the migrated schema.

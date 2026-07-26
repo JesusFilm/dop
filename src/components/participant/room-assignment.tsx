@@ -22,18 +22,18 @@ function MemberRow({ member }: { member: ParticipantMember }) {
   return (
     <li
       className={
-        member.isCoordinator
+        member.isLeader
           ? "flex items-center gap-4 rounded-3xl bg-primary-soft p-4"
           : "flex items-center gap-4 rounded-3xl bg-white p-4 shadow-card"
       }
     >
-      <Avatar name={member.name} highlighted={member.isCoordinator} />
+      <Avatar name={member.name} highlighted={member.isLeader} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-lg font-semibold text-ink">{member.name}</p>
-        {member.isCoordinator ? (
+        {member.isLeader ? (
           <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-primary">
             <BadgeCheck aria-hidden="true" className="size-4" />
-            Room coordinator
+            Room leader
           </p>
         ) : null}
       </div>
@@ -61,18 +61,18 @@ export function RoomAssignment({
   const [error, setError] = useState("");
   const [isPending, setPending] = useState(false);
   const { participant: viewer, room } = snapshot;
-  const coordinator = room.members.find(({ isCoordinator }) => isCoordinator);
-  const viewerIsCoordinator = viewer.id === coordinator?.id;
+  const leader = room.members.find(({ isLeader }) => isLeader);
+  const viewerIsLeader = viewer.id === leader?.id;
 
   async function confirmTakeover() {
     setPending(true);
     setError("");
     try {
       await onTakeover();
-      setAnnouncement(`${viewer.name} is now the room coordinator.`);
+      setAnnouncement(`${viewer.name} is now the room leader.`);
       setTakeoverOpen(false);
     } catch {
-      setError("We couldn’t update the coordinator. Please try again.");
+      setError("We couldn’t update the leader. Please try again.");
     } finally {
       setPending(false);
     }
@@ -135,12 +135,12 @@ export function RoomAssignment({
         </section>
 
         <div className="mt-10 text-center">
-          {viewerIsCoordinator ? (
+          {viewerIsLeader ? (
             onStartJourney ? (
               <div className="rounded-[2rem] bg-white p-6 shadow-card">
                 <p className="flex items-center justify-center gap-2 text-sm font-semibold text-primary">
                   <BadgeCheck aria-hidden="true" className="size-4" />
-                  You’re the room coordinator
+                  You’re the room leader
                 </p>
                 <h2 className="mt-3 font-serif text-2xl font-bold text-ink">
                   Start {journeyName ?? "the journey"} when everyone is ready.
@@ -162,7 +162,7 @@ export function RoomAssignment({
             ) : (
               <p className="inline-flex items-center gap-2 rounded-full bg-primary-faint px-5 py-3 text-sm font-semibold text-primary">
                 <BadgeCheck aria-hidden="true" className="size-4" />
-                You’re the room coordinator
+                You’re the room leader
               </p>
             )
           ) : (
@@ -170,7 +170,7 @@ export function RoomAssignment({
               className="rounded-full px-4 py-3 text-sm font-semibold text-ink-muted underline decoration-outline underline-offset-4 transition hover:text-primary"
               onClick={() => setTakeoverOpen(true)}
             >
-              Coordinator unavailable?
+              Leader unavailable?
             </button>
           )}
         </div>
@@ -184,7 +184,7 @@ export function RoomAssignment({
         open={isTakeoverOpen}
         onClose={() => setTakeoverOpen(false)}
         title="Lead this group?"
-        description="If the selected coordinator isn’t here, you can take over. Everyone in the room will see that you are now the coordinator."
+        description="If the selected leader isn’t here, you can take over. Everyone in the room will see that you are now the leader."
       >
         <div className="mx-auto mb-6 grid size-16 place-items-center rounded-full bg-primary text-white">
           <CircleUserRound aria-hidden="true" className="size-8" />

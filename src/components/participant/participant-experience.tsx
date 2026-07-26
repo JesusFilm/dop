@@ -58,10 +58,12 @@ export function ParticipantExperience({
   const [journeyError, setJourneyError] = useState("");
 
   async function takeOver() {
-    const response = await fetchWithTimeout("/api/participant/coordinator", {
+    const response = await fetchWithTimeout("/api/participant/leader", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedRevision: snapshot.revision }),
     });
-    if (!response.ok) throw new Error("Coordinator update failed");
+    if (!response.ok) throw new Error("Leader update failed");
     setSnapshot((await response.json()) as ParticipantSnapshot);
   }
 
@@ -74,7 +76,10 @@ export function ParticipantExperience({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ expectedState }),
+          body: JSON.stringify({
+            expectedState,
+            expectedRevision: snapshot.revision,
+          }),
         },
       );
       const result = (await response.json()) as ParticipantSnapshot & {
@@ -88,6 +93,46 @@ export function ParticipantExperience({
       setJourneyError(
         error instanceof Error ? error.message : "The room could not continue.",
       );
+    } finally {
+      setJourneyPending(false);
+    }
+  }
+
+  async function reassignReader(
+    expectedState: string,
+  ): Promise<"changed" | "stale" | "unavailable" | "error"> {
+    setJourneyPending(true);
+    setJourneyError("");
+    try {
+      const response = await fetchWithTimeout(
+        "/api/participant/journey/reassign",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedState,
+            expectedRevision: snapshot.revision,
+          }),
+        },
+      );
+      const result = (await response.json()) as {
+        snapshot?: ParticipantSnapshot;
+        reassigned?: boolean;
+        result?: "changed" | "stale" | "unavailable";
+        error?: string;
+      };
+      if (!response.ok || !result.snapshot) {
+        throw new Error(result.error ?? "The reader could not be reassigned.");
+      }
+      setSnapshot(result.snapshot);
+      return result.result ?? (result.reassigned ? "changed" : "unavailable");
+    } catch (error) {
+      setJourneyError(
+        error instanceof Error
+          ? error.message
+          : "The reader could not be reassigned.",
+      );
+      return "error";
     } finally {
       setJourneyPending(false);
     }
@@ -120,6 +165,7 @@ export function ParticipantExperience({
             snapshot={snapshot}
             journey={snapshot.journey}
             onAdvance={() => advanceJourney(snapshot.journey!.expectedState)}
+            onReassign={() => reassignReader(snapshot.journey!.expectedState)}
             onTakeover={takeOver}
             isPending={isJourneyPending}
             error={journeyError}

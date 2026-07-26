@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, BadgeCheck, CircleUserRound } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  CircleUserRound,
+  RefreshCw,
+} from "lucide-react";
 import { Countdown } from "@/components/journey/countdown";
 import { ModuleRenderer } from "@/components/journey/module-renderer";
 import { ActionButton } from "@/components/ui/action-button";
@@ -18,6 +23,7 @@ export function ModuleShell({
   snapshot,
   journey,
   onAdvance,
+  onReassign,
   onTakeover,
   isPending,
   error,
@@ -25,6 +31,7 @@ export function ModuleShell({
   snapshot: RoomSnapshot;
   journey: ActiveJourney;
   onAdvance: () => Promise<void>;
+  onReassign: () => Promise<"changed" | "stale" | "unavailable" | "error">;
   onTakeover: () => Promise<void>;
   isPending: boolean;
   error: string;
@@ -32,8 +39,9 @@ export function ModuleShell({
   const [isTakeoverOpen, setTakeoverOpen] = useState(false);
   const [isTakeoverPending, setTakeoverPending] = useState(false);
   const [takeoverError, setTakeoverError] = useState("");
-  const viewerIsCoordinator = snapshot.room.members.some(
-    ({ id, isCoordinator }) => id === snapshot.participant.id && isCoordinator,
+  const [reassignMessage, setReassignMessage] = useState("");
+  const viewerIsLeader = snapshot.room.members.some(
+    ({ id, isLeader }) => id === snapshot.participant.id && isLeader,
   );
 
   async function confirmTakeover() {
@@ -43,9 +51,19 @@ export function ModuleShell({
       await onTakeover();
       setTakeoverOpen(false);
     } catch {
-      setTakeoverError("We couldn’t update the coordinator. Please try again.");
+      setTakeoverError("We couldn’t update the leader. Please try again.");
     } finally {
       setTakeoverPending(false);
+    }
+  }
+
+  async function reassignReader() {
+    setReassignMessage("");
+    const result = await onReassign();
+    if (result === "unavailable") {
+      setReassignMessage("No other reader is available.");
+    } else if (result === "stale") {
+      setReassignMessage("The room moved on. Try reassigning again.");
     }
   }
 
@@ -84,7 +102,7 @@ export function ModuleShell({
           </p>
         ) : null}
         <div className="mt-8">
-          {viewerIsCoordinator ? (
+          {viewerIsLeader ? (
             <>
               <p className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold text-primary">
                 <BadgeCheck aria-hidden="true" className="size-4" />
@@ -94,6 +112,26 @@ export function ModuleShell({
                 {isPending ? "Continuing…" : "Continue"}
                 <ArrowRight aria-hidden="true" className="size-5" />
               </ActionButton>
+              {journey.module.behaviorKey === "short-study" &&
+              journey.module.shortStudy.canReassign ? (
+                <ActionButton
+                  className="mt-3"
+                  tone="secondary"
+                  onClick={reassignReader}
+                  disabled={isPending}
+                >
+                  <RefreshCw aria-hidden="true" className="size-5" />
+                  Reassign current reader
+                </ActionButton>
+              ) : null}
+              {reassignMessage ? (
+                <p
+                  role="status"
+                  className="mt-3 text-center text-sm text-ink-muted"
+                >
+                  {reassignMessage}
+                </p>
+              ) : null}
             </>
           ) : (
             <ActionButton
@@ -101,7 +139,7 @@ export function ModuleShell({
               onClick={() => setTakeoverOpen(true)}
               disabled={isPending}
             >
-              Coordinator unavailable? Take over
+              Leader unavailable? Take over
             </ActionButton>
           )}
         </div>
@@ -111,7 +149,7 @@ export function ModuleShell({
         open={isTakeoverOpen}
         onClose={() => setTakeoverOpen(false)}
         title="Lead this group?"
-        description="If the selected coordinator isn’t here, you can take over. Everyone in the room will see that you now control when the journey continues."
+        description="If the selected leader isn’t here, you can take over. Everyone in the room will see that you now control when the journey continues."
       >
         <div className="mx-auto mb-6 grid size-16 place-items-center rounded-full bg-primary text-white">
           <CircleUserRound aria-hidden="true" className="size-8" />

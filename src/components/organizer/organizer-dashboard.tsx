@@ -54,10 +54,10 @@ function RoomCard({
                 className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2 text-sm font-medium text-ink"
               >
                 <span className="min-w-0 flex-1 truncate">{member.name}</span>
-                {member.isCoordinator ? (
+                {member.isLeader ? (
                   <Star
                     role="img"
-                    aria-label="Coordinator"
+                    aria-label="Leader"
                     className="size-4 shrink-0 fill-primary text-primary"
                   />
                 ) : null}
@@ -205,7 +205,7 @@ export function OrganizerDashboard({
         open={isConfirmingLaunch}
         onClose={closeConfirmation}
         title="Reveal room assignments?"
-        description={`This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. ${snapshot.journey.available ? "Each room will then gather before its coordinator starts the journey." : "The guided journey is unavailable, so only the room handoff will begin."} Those assignments are final until the gathering is reset.`}
+        description={`This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. ${snapshot.journey.available ? "Each room will then gather before its leader starts the journey." : "The guided journey is unavailable, so only the room handoff will begin."} Those assignments are final until the gathering is reset.`}
       >
         <div className="flex flex-col gap-3">
           {error ? (

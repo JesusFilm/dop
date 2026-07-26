@@ -14,6 +14,15 @@ import type {
 } from "@/lib/gathering/types";
 import { validateJourneyModule } from "@/lib/journey/registry";
 import { getValidJourney } from "@/lib/journey/service";
+import {
+  buildShortStudyContributions,
+  createShortStudyState,
+  parseShortStudyState,
+  reassignCurrentReader,
+  reconcileShortStudyLeader,
+  type ShortStudyConfiguration,
+} from "@/lib/journey/short-study";
+import type { ShortStudyPresentation } from "@/lib/journey/types";
 
 type Transaction = Prisma.TransactionClient;
 
@@ -115,6 +124,52 @@ function assertValidRoomConfiguration(
   }
 }
 
+function buildShortStudyPresentation(input: {
+  configuration: ShortStudyConfiguration;
+  moduleState: Prisma.JsonValue | null;
+  room: {
+    leaderId: string | null;
+    participants: { id: string; displayName: string }[];
+  };
+  viewerId: string;
+}): ShortStudyPresentation {
+  const state = parseShortStudyState(input.moduleState, input.configuration);
+  if (!state) throw new Error("Invalid Short Study state");
+
+  const contributions = buildShortStudyContributions(input.configuration);
+  const contribution = contributions[state.contributionIndex];
+  if (!contribution) throw new Error("Invalid Short Study contribution");
+
+  const readerId =
+    contribution.kind === "discussion"
+      ? input.room.leaderId
+      : state.assignments[state.contributionIndex];
+  const readerMember = input.room.participants.find(
+    ({ id }) => id === readerId,
+  );
+  const viewerIsLeader = input.viewerId === input.room.leaderId;
+
+  return {
+    contribution,
+    contributionNumber: state.contributionIndex + 1,
+    contributionCount: contributions.length,
+    reader: readerMember
+      ? { id: readerMember.id, name: readerMember.displayName }
+      : null,
+    viewerRole: viewerIsLeader
+      ? "leader"
+      : readerId === input.viewerId
+        ? "reader"
+        : "member",
+    canReassign:
+      viewerIsLeader &&
+      contribution.kind !== "discussion" &&
+      input.room.participants.some(
+        ({ id }) => id !== input.room.leaderId && id !== readerId,
+      ),
+  };
+}
+
 export async function getParticipantSnapshot(
   sessionTokenHash?: string,
 ): Promise<ParticipantSnapshot> {
@@ -137,7 +192,7 @@ export async function getParticipantSnapshot(
           id: true,
           name: true,
           directions: true,
-          coordinatorId: true,
+          leaderId: true,
           journeyRuntime: {
             select: {
               journeyId: true,
@@ -154,6 +209,7 @@ export async function getParticipantSnapshot(
               },
               moduleStartedAt: true,
               completedAt: true,
+              moduleState: true,
             },
           },
           participants: {
@@ -207,16 +263,37 @@ export async function getParticipantSnapshot(
           runtime.currentModule.behaviorKey,
           runtime.currentModule.configuration,
         );
+        const shortStudy =
+          clientModule.behaviorKey === "short-study"
+            ? buildShortStudyPresentation({
+                configuration: clientModule.configuration,
+                moduleState: runtime.moduleState,
+                room: participant.room,
+                viewerId: participant.id,
+              })
+            : undefined;
+        const presentedModule =
+          clientModule.behaviorKey === "short-study"
+            ? {
+                behaviorKey: "short-study" as const,
+                configuration: {
+                  translation: clientModule.configuration.translation,
+                },
+                shortStudy: shortStudy!,
+              }
+            : clientModule;
         journey = {
           state: "ACTIVE",
           journeyName: runtime.journey.name,
-          expectedState: runtime.currentModule.id,
+          expectedState: shortStudy
+            ? `${runtime.currentModule.id}:${shortStudy.contributionNumber - 1}`
+            : runtime.currentModule.id,
           joinedInProgress,
           module: {
             id: runtime.currentModule.id,
             title: runtime.currentModule.title,
             recommendedSeconds: runtime.currentModule.recommendedSeconds,
-            ...clientModule,
+            ...presentedModule,
             startedAt: runtime.moduleStartedAt.toISOString(),
             serverTime: new Date().toISOString(),
           },
@@ -251,7 +328,7 @@ export async function getParticipantSnapshot(
       members: participant.room.participants.map((member) => ({
         id: member.id,
         name: member.displayName,
-        isCoordinator: member.id === participant.room?.coordinatorId,
+        isLeader: member.id === participant.room?.leaderId,
       })),
     },
     ...(journey ? { journey } : {}),
@@ -280,7 +357,7 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
             orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
             select: { id: true, displayName: true },
           },
-          coordinator: { select: { displayName: true } },
+          leader: { select: { displayName: true } },
           journeyRuntime: {
             select: { currentModuleId: true, completedAt: true },
           },
@@ -306,19 +383,14 @@ export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
       directions: room.directions,
       maxCapacity: room.maxCapacity,
       memberCount: room.participants.length,
-      coordinatorName:
-        gathering.phase === "ASSIGNED"
-          ? (room.coordinator?.displayName ?? null)
-          : null,
+      leaderName: room.leader?.displayName ?? null,
       journeyState: organizerJourneyState(
         validJourney ? room.journeyRuntime : null,
       ),
       members: room.participants.map((participant) => ({
         id: participant.id,
         name: participant.displayName,
-        isCoordinator:
-          gathering.phase === "ASSIGNED" &&
-          participant.id === room.coordinatorId,
+        isLeader: participant.id === room.leaderId,
       })),
     })),
   };
@@ -391,8 +463,8 @@ export async function joinParticipant(input: {
     });
     if (room.participantCount === 0) {
       await transaction.room.updateMany({
-        where: { id: room.id, coordinatorId: null },
-        data: { coordinatorId: participant.id },
+        where: { id: room.id, leaderId: null },
+        data: { leaderId: participant.id },
       });
     }
     if (gathering.phase === "ASSIGNED") {
@@ -449,8 +521,8 @@ export async function launchGathering(): Promise<void> {
       if (!firstParticipant) continue;
 
       await transaction.room.updateMany({
-        where: { id: room.id, coordinatorId: null },
-        data: { coordinatorId: firstParticipant.id },
+        where: { id: room.id, leaderId: null },
+        data: { leaderId: firstParticipant.id },
       });
       if (validJourney) {
         await transaction.roomJourney.upsert({
@@ -480,6 +552,7 @@ export async function launchGathering(): Promise<void> {
 export async function advanceRoomJourney(input: {
   sessionTokenHash: string;
   expectedState: string;
+  expectedRevision: number;
 }): Promise<void> {
   await serializedTransaction(async (transaction) => {
     const participant = await transaction.participant.findFirst({
@@ -490,17 +563,18 @@ export async function advanceRoomJourney(input: {
       select: {
         id: true,
         roomId: true,
-        room: { select: { coordinatorId: true } },
-        gathering: { select: { phase: true } },
+        room: {
+          select: {
+            leaderId: true,
+          },
+        },
+        gathering: { select: { phase: true, revision: true } },
       },
     });
-    if (
-      !participant?.roomId ||
-      participant.room?.coordinatorId !== participant.id
-    ) {
+    if (!participant?.roomId || participant.room?.leaderId !== participant.id) {
       throw new GatheringError(
-        "Only the room coordinator can continue the journey.",
-        "COORDINATOR_REQUIRED",
+        "Only the room leader can continue the journey.",
+        "LEADER_REQUIRED",
         403,
       );
     }
@@ -510,6 +584,9 @@ export async function advanceRoomJourney(input: {
         "NOT_REVEALED",
         409,
       );
+    }
+    if (participant.gathering.revision !== input.expectedRevision) {
+      return;
     }
 
     const runtime = await transaction.roomJourney.findUnique({
@@ -531,13 +608,6 @@ export async function advanceRoomJourney(input: {
       );
     }
 
-    const currentState =
-      runtime.completedAt !== null
-        ? "completed"
-        : (runtime.currentModuleId ?? "gathering");
-    if (input.expectedState !== currentState) return;
-    if (runtime.completedAt) return;
-
     const currentIndex = runtime.currentModuleId
       ? validJourney.modules.findIndex(
           ({ id }) => id === runtime.currentModuleId,
@@ -550,15 +620,76 @@ export async function advanceRoomJourney(input: {
         409,
       );
     }
+    const currentModule =
+      currentIndex >= 0 ? validJourney.modules[currentIndex] : undefined;
+    const currentShortStudyState =
+      currentModule?.behaviorKey === "short-study"
+        ? parseShortStudyState(runtime.moduleState, currentModule.configuration)
+        : undefined;
+    if (
+      currentModule?.behaviorKey === "short-study" &&
+      !currentShortStudyState
+    ) {
+      throw new GatheringError(
+        "The room journey state is invalid.",
+        "JOURNEY_STATE_INVALID",
+        409,
+      );
+    }
+    const currentState = runtime.completedAt
+      ? "completed"
+      : currentModule?.behaviorKey === "short-study" && currentShortStudyState
+        ? `${currentModule.id}:${currentShortStudyState.contributionIndex}`
+        : (runtime.currentModuleId ?? "gathering");
+    if (input.expectedState !== currentState) return;
+    if (runtime.completedAt) return;
+
+    if (
+      currentModule?.behaviorKey === "short-study" &&
+      currentShortStudyState
+    ) {
+      const contributionCount = buildShortStudyContributions(
+        currentModule.configuration,
+      ).length;
+      if (currentShortStudyState.contributionIndex < contributionCount - 1) {
+        await transaction.roomJourney.update({
+          where: { id: runtime.id },
+          data: {
+            moduleState: {
+              ...currentShortStudyState,
+              contributionIndex: currentShortStudyState.contributionIndex + 1,
+            },
+          },
+        });
+        await transaction.gathering.update({
+          where: { id: ACTIVE_GATHERING_ID },
+          data: { revision: { increment: 1 } },
+        });
+        return;
+      }
+    }
+
     const nextModule = validJourney.modules[currentIndex + 1];
     const now = new Date();
+    const nextModuleState =
+      nextModule?.behaviorKey === "short-study"
+        ? createShortStudyState(
+            nextModule.configuration,
+            await transaction.participant.findMany({
+              where: { roomId: participant.roomId },
+              orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+              select: { id: true },
+            }),
+            participant.id,
+          )
+        : null;
     await transaction.roomJourney.update({
       where: { id: runtime.id },
       data: nextModule
         ? {
             currentModuleId: nextModule.id,
             moduleStartedAt: now,
-            moduleState: Prisma.DbNull,
+            moduleState: nextModuleState ?? Prisma.DbNull,
           }
         : {
             currentModuleId: null,
@@ -574,19 +705,138 @@ export async function advanceRoomJourney(input: {
   });
 }
 
-export async function takeOverCoordinator(
-  sessionTokenHash: string,
-): Promise<void> {
-  await serializedTransaction(async (transaction) => {
+export async function reassignShortStudyReader(input: {
+  sessionTokenHash: string;
+  expectedState: string;
+  expectedRevision: number;
+}): Promise<"changed" | "stale" | "unavailable"> {
+  return serializedTransaction(async (transaction) => {
     const participant = await transaction.participant.findFirst({
       where: {
-        sessionTokenHash,
+        sessionTokenHash: input.sessionTokenHash,
         gatheringId: ACTIVE_GATHERING_ID,
       },
       select: {
         id: true,
         roomId: true,
-        gathering: { select: { phase: true } },
+        gathering: { select: { phase: true, revision: true } },
+        room: {
+          select: {
+            leaderId: true,
+            participants: {
+              orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+              select: { id: true },
+            },
+            journeyRuntime: {
+              select: {
+                id: true,
+                moduleState: true,
+                currentModule: {
+                  select: { id: true, behaviorKey: true, configuration: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!participant?.roomId || participant.room?.leaderId !== participant.id) {
+      throw new GatheringError(
+        "Only the room leader can reassign a reader.",
+        "LEADER_REQUIRED",
+        403,
+      );
+    }
+    if (participant.gathering.phase !== "ASSIGNED") {
+      throw new GatheringError(
+        "Room assignments have not been revealed.",
+        "NOT_REVEALED",
+        409,
+      );
+    }
+    if (participant.gathering.revision !== input.expectedRevision) {
+      return "stale";
+    }
+    const runtime = participant.room.journeyRuntime;
+    const currentModule = runtime?.currentModule;
+    if (!runtime || currentModule?.behaviorKey !== "short-study") {
+      throw new GatheringError(
+        "This activity does not support reader reassignment.",
+        "JOURNEY_STATE_INVALID",
+        409,
+      );
+    }
+    const clientModule = validateJourneyModule(
+      currentModule.behaviorKey,
+      currentModule.configuration,
+    );
+    if (clientModule.behaviorKey !== "short-study") {
+      throw new GatheringError(
+        "This activity does not support reader reassignment.",
+        "JOURNEY_STATE_INVALID",
+        409,
+      );
+    }
+    const state = parseShortStudyState(
+      runtime.moduleState,
+      clientModule.configuration,
+    );
+    if (
+      !state ||
+      input.expectedState !== `${currentModule.id}:${state.contributionIndex}`
+    ) {
+      return "stale";
+    }
+    const result = reassignCurrentReader(
+      state,
+      participant.room.participants,
+      participant.id,
+    );
+    if (!result.changed) return "unavailable";
+
+    await transaction.roomJourney.update({
+      where: { id: runtime.id },
+      data: { moduleState: result.state },
+    });
+    await transaction.gathering.update({
+      where: { id: ACTIVE_GATHERING_ID },
+      data: { revision: { increment: 1 } },
+    });
+    return "changed";
+  });
+}
+
+export async function takeOverLeader(input: {
+  sessionTokenHash: string;
+  expectedRevision: number;
+}): Promise<void> {
+  await serializedTransaction(async (transaction) => {
+    const participant = await transaction.participant.findFirst({
+      where: {
+        sessionTokenHash: input.sessionTokenHash,
+        gatheringId: ACTIVE_GATHERING_ID,
+      },
+      select: {
+        id: true,
+        roomId: true,
+        gathering: { select: { phase: true, revision: true } },
+        room: {
+          select: {
+            participants: {
+              orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+              select: { id: true },
+            },
+            journeyRuntime: {
+              select: {
+                id: true,
+                moduleState: true,
+                currentModule: {
+                  select: { behaviorKey: true, configuration: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!participant) {
@@ -598,23 +848,55 @@ export async function takeOverCoordinator(
     }
     if (participant.gathering.phase !== "ASSIGNED") {
       throw new GatheringError(
-        "Coordinator takeover is available after room assignments are revealed.",
+        "Leader takeover is available after room assignments are revealed.",
         "NOT_REVEALED",
         409,
       );
     }
-    if (!participant.roomId) {
+    if (!participant.roomId || !participant.room) {
       throw new GatheringError(
         "Only an assigned room member can take over.",
         "NOT_ASSIGNED",
         403,
       );
     }
+    if (participant.gathering.revision !== input.expectedRevision) {
+      throw new GatheringError(
+        "The room changed. Please try taking over again.",
+        "STALE_STATE",
+        409,
+      );
+    }
 
     await transaction.room.update({
       where: { id: participant.roomId },
-      data: { coordinatorId: participant.id },
+      data: { leaderId: participant.id },
     });
+    const runtime = participant.room?.journeyRuntime;
+    if (runtime?.currentModule?.behaviorKey === "short-study") {
+      const clientModule = validateJourneyModule(
+        runtime.currentModule.behaviorKey,
+        runtime.currentModule.configuration,
+      );
+      if (clientModule.behaviorKey === "short-study") {
+        const state = parseShortStudyState(
+          runtime.moduleState,
+          clientModule.configuration,
+        );
+        if (state) {
+          await transaction.roomJourney.update({
+            where: { id: runtime.id },
+            data: {
+              moduleState: reconcileShortStudyLeader(
+                state,
+                participant.room.participants,
+                participant.id,
+              ),
+            },
+          });
+        }
+      }
+    }
     await transaction.gathering.update({
       where: { id: ACTIVE_GATHERING_ID },
       data: { revision: { increment: 1 } },
@@ -629,7 +911,7 @@ export async function resetGathering(): Promise<void> {
     });
     await transaction.room.updateMany({
       where: { gatheringId: ACTIVE_GATHERING_ID },
-      data: { coordinatorId: null },
+      data: { leaderId: null },
     });
     await transaction.participant.deleteMany({
       where: { gatheringId: ACTIVE_GATHERING_ID },

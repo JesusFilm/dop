@@ -6,7 +6,7 @@
 ## Context
 
 Every physical room needs to follow the same ordered Day of Prayer journey
-while its coordinator decides when that room moves forward. Participants must
+while its leader decides when that room moves forward. Participants must
 return to the current activity after reload or late arrival, and advisory
 timers must remain consistent without controlling progression. Individual
 prayer activities will be designed and delivered separately.
@@ -24,9 +24,9 @@ that journey through the application registry and creates untimed room runtime
 records when it is valid. If it is absent or invalid, reveal keeps the existing
 room-handoff-only behavior.
 
-Start and advance are one coordinator-authorized, forward-only mutation under
+Start and advance are one leader-authorized, forward-only mutation under
 the existing gathering row lock. Each request includes the state the
-coordinator currently sees; a replay with a stale state is a no-op. Entering a
+leader currently sees; a replay with a stale state is a no-op. Entering a
 module persists one server start timestamp. Clients derive the recommended
 countdown from that timestamp and duration, but reaching zero never changes
 room state.
@@ -45,7 +45,7 @@ running gathering.
 ## Consequences
 
 - Rooms remain synchronized internally while progressing independently.
-- Reload, reconnect, coordinator takeover, and late arrival preserve the
+- Reload, reconnect, leader takeover, and late arrival preserve the
   authoritative module and timer.
 - Framework deployment is backward compatible before the first prayer module
   and production journey are configured.

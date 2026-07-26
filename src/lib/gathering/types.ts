@@ -1,11 +1,11 @@
-import type { JourneyClientModule } from "@/lib/journey/types";
+import type { PresentedJourneyModule } from "@/lib/journey/types";
 
 export type GatheringPhase = "FORMING" | "ASSIGNED";
 
 export type ParticipantMember = {
   id: string;
   name: string;
-  isCoordinator: boolean;
+  isLeader: boolean;
 };
 
 export type ParticipantJourneyState =
@@ -20,7 +20,7 @@ export type ParticipantJourneyState =
       journeyName: string;
       expectedState: string;
       joinedInProgress: boolean;
-      module: JourneyClientModule & {
+      module: PresentedJourneyModule & {
         id: string;
         title: string;
         recommendedSeconds: number;
@@ -62,7 +62,7 @@ export type OrganizerRoomSnapshot = {
   directions: string;
   maxCapacity: number | null;
   memberCount: number;
-  coordinatorName: string | null;
+  leaderName: string | null;
   journeyState: "unavailable" | "gathering" | "active" | "completed";
   members: ParticipantMember[];
 };

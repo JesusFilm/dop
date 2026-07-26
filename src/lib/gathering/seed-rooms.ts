@@ -63,7 +63,7 @@ export async function seedInitialRooms(
     });
 
     if (gathering.phase !== "FORMING") {
-      throw new Error("Cannot seed rooms after the gathering has launched.");
+      return 0;
     }
 
     const existingRooms = await transaction.room.findMany({

@@ -35,8 +35,8 @@ model Room {
   maxCapacity    Int?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
-  coordinatorId  String?       @unique @db.Uuid
-  coordinator    Participant?  @relation("RoomCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
+  leaderId       String?       @unique @map("coordinatorId") @db.Uuid
+  leader         Participant?  @relation("RoomLeader", fields: [leaderId], references: [id], onDelete: SetNull)
   gathering      Gathering     @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
   participants   Participant[] @relation("RoomParticipants")
   journeyRuntime RoomJourney?
@@ -103,7 +103,7 @@ model Participant {
   assignedAt       DateTime?
   gathering        Gathering @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
   room             Room?     @relation("RoomParticipants", fields: [roomId], references: [id], onDelete: SetNull)
-  coordinatedRoom  Room?     @relation("RoomCoordinator")
+  ledRoom          Room?     @relation("RoomLeader")
 
   @@index([gatheringId])
   @@index([roomId])

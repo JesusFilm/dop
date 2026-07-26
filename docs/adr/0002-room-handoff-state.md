@@ -7,7 +7,7 @@
 
 Thirty to fifty participant phones and an organizer screen need to converge on
 one gathering state across reloads, reconnects, and Railway process restarts.
-Joins, launch, late joins, coordinator takeover, and reset can arrive
+Joins, launch, late joins, leader takeover, and reset can arrive
 concurrently. Personal prayer requests are sensitive and must not enter
 organizer-facing data.
 
@@ -22,9 +22,9 @@ always include at least one unlimited room; finite capacities are at least two.
 Assign each participant during the join transaction in participant join order
 and seeded room creation order. Fill two places in each room before advancing,
 then choose the first smallest eligible room so finite rooms fall out when full.
-The first participant assigned to a room becomes its coordinator. Launch
-reveals existing assignments and coordinator identities without recalculating
-membership.
+The first participant assigned to a room becomes its leader. The organizer
+sees that leader immediately, while launch reveals existing assignments
+and leader identities to participants without recalculating membership.
 
 Use an opaque HttpOnly browser cookie for same-device participant continuity,
 storing only its SHA-256 digest. Encrypt non-empty personal prayer requests with
@@ -33,7 +33,7 @@ AES-256-GCM using `PRAYER_REQUEST_ENCRYPTION_KEY`.
 Expose separate participant and organizer snapshots through App Router Route
 Handlers. Clients poll the authoritative snapshots every second while visible,
 with slower retries after failures; no process memory is authoritative. The
-organizer projection contains names, rooms, and coordinator state but never
+organizer projection contains names, rooms, and leader state but never
 prayer-request fields.
 
 ## Consequences
@@ -41,8 +41,8 @@ prayer-request fields.
 - Reloads, reconnects, deploys, and multiple app instances retain consistent
   gathering state.
 - Concurrent joins cannot partially assign or silently overfill a room.
-- Organizers can inspect provisional rosters before launch, while participants
-  cannot see their stored room until launch reveals it.
+- Organizers can inspect provisional rosters and leaders before launch,
+  while participants cannot see their stored room until launch reveals it.
 - Event-day operators cannot repair invalid room seed data through the
   application; joins fail clearly until the seed invariant is restored.
 - The app requires PostgreSQL migrations before startup and a stable encryption

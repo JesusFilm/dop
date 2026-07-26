@@ -39,19 +39,25 @@ describe("participant journey advance route", () => {
   });
 
   it("passes the participant session and expected state to the lifecycle", async () => {
-    const response = await POST(request({ expectedState: "gathering" }));
+    const response = await POST(
+      request({ expectedState: "gathering", expectedRevision: 2 }),
+    );
 
     expect(response.status).toBe(200);
     expect(mocks.advanceRoomJourney).toHaveBeenCalledWith({
       sessionTokenHash:
         "434e05169b4e0bd6d360ab48a271760ac415bb9cdbfbef5bc82ded1cecd428c5",
       expectedState: "gathering",
+      expectedRevision: 2,
     });
   });
 
   it("rejects cross-origin requests before changing state", async () => {
     const response = await POST(
-      request({ expectedState: "gathering" }, "https://attacker.test"),
+      request(
+        { expectedState: "gathering", expectedRevision: 2 },
+        "https://attacker.test",
+      ),
     );
 
     expect(response.status).toBe(403);
@@ -68,7 +74,9 @@ describe("participant journey advance route", () => {
   it("rejects an expired participant session", async () => {
     mocks.cookies.mockResolvedValue({ get: () => undefined });
 
-    const response = await POST(request({ expectedState: "gathering" }));
+    const response = await POST(
+      request({ expectedState: "gathering", expectedRevision: 2 }),
+    );
 
     expect(response.status).toBe(401);
     expect(mocks.advanceRoomJourney).not.toHaveBeenCalled();

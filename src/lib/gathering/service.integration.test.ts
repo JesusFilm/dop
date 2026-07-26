@@ -7,15 +7,22 @@ import {
   getParticipantSnapshot,
   joinParticipant,
   launchGathering,
+  reassignShortStudyReader,
   resetGathering,
-  takeOverCoordinator,
+  takeOverLeader,
 } from "@/lib/gathering/service";
+import {
+  PRODUCTION_JOURNEY_ID,
+  SHORT_STUDY_CONFIGURATION,
+  SHORT_STUDY_MODULE_ID,
+  seedProductionJourney,
+} from "@/lib/journey/seed";
 
 async function clearGathering() {
   const database = getDatabase();
   await database.room.updateMany({
     where: { gatheringId: ACTIVE_GATHERING_ID },
-    data: { coordinatorId: null },
+    data: { leaderId: null },
   });
   await database.participant.deleteMany({
     where: { gatheringId: ACTIVE_GATHERING_ID },
@@ -141,28 +148,33 @@ describe("gathering lifecycle", () => {
     expect(beforeLaunch.rooms.map(({ memberCount }) => memberCount)).toEqual([
       3, 2,
     ]);
-    const storedCoordinators = await getDatabase().room.findMany({
+    const storedLeaders = await getDatabase().room.findMany({
       where: { gatheringId: ACTIVE_GATHERING_ID },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { coordinator: { select: { displayName: true } } },
+      select: { leader: { select: { displayName: true } } },
     });
-    expect(
-      storedCoordinators.map(({ coordinator }) => coordinator?.displayName),
-    ).toEqual(["Participant 1", "Participant 3"]);
-    expect(
-      beforeLaunch.rooms.map(({ coordinatorName }) => coordinatorName),
-    ).toEqual([null, null]);
+    expect(storedLeaders.map(({ leader }) => leader?.displayName)).toEqual([
+      "Participant 1",
+      "Participant 3",
+    ]);
+    expect(beforeLaunch.rooms.map(({ leaderName }) => leaderName)).toEqual([
+      "Participant 1",
+      "Participant 3",
+    ]);
     expect(
       beforeLaunch.rooms
         .flatMap(({ members }) => members)
-        .some(({ isCoordinator }) => isCoordinator),
-    ).toBe(false);
+        .some(({ isLeader }) => isLeader),
+    ).toBe(true);
     expect(JSON.stringify(beforeLaunch)).not.toContain("Private request");
     expect(await getParticipantSnapshot("1".padStart(64, "0"))).toMatchObject({
       state: "LOBBY",
     });
     await expect(
-      takeOverCoordinator("1".padStart(64, "0")),
+      takeOverLeader({
+        sessionTokenHash: "1".padStart(64, "0"),
+        expectedRevision: beforeLaunch.revision,
+      }),
     ).rejects.toMatchObject({ code: "NOT_REVEALED" });
     const provisionalMembership = beforeLaunch.rooms.map((room) =>
       room.members.map(({ id }) => id),
@@ -174,19 +186,29 @@ describe("gathering lifecycle", () => {
     expect(
       assigned.rooms.map((room) => room.members.map(({ id }) => id)),
     ).toEqual(provisionalMembership);
-    expect(
-      assigned.rooms.map(({ coordinatorName }) => coordinatorName),
-    ).toEqual(["Participant 1", "Participant 3"]);
+    expect(assigned.rooms.map(({ leaderName }) => leaderName)).toEqual([
+      "Participant 1",
+      "Participant 3",
+    ]);
 
     const first = await getParticipantSnapshot("1".padStart(64, "0"));
     expect(first.state).toBe("ROOM");
-    await takeOverCoordinator("4".padStart(64, "0"));
+    await takeOverLeader({
+      sessionTokenHash: "4".padStart(64, "0"),
+      expectedRevision: assigned.revision,
+    });
+    await expect(
+      takeOverLeader({
+        sessionTokenHash: "1".padStart(64, "0"),
+        expectedRevision: assigned.revision,
+      }),
+    ).rejects.toMatchObject({ code: "STALE_STATE" });
     const afterTakeover = await getParticipantSnapshot("4".padStart(64, "0"));
     expect(
       afterTakeover.state === "ROOM" &&
         afterTakeover.room.members.find(
           ({ id }) => id === afterTakeover.participant.id,
-        )?.isCoordinator,
+        )?.isLeader,
     ).toBe(true);
 
     await joinParticipant({
@@ -200,7 +222,7 @@ describe("gathering lifecycle", () => {
     expect(
       (await getOrganizerSnapshot()).rooms.find(
         ({ name }) => name === "Upper Room",
-      )?.coordinatorName,
+      )?.leaderName,
     ).toBe("Participant 4");
 
     await resetGathering();
@@ -212,24 +234,24 @@ describe("gathering lifecycle", () => {
     expect(reset.rooms).toHaveLength(2);
   });
 
-  it("runs independent room journeys with replay-safe coordinator progression", async () => {
+  it("runs independent room journeys with replay-safe leader progression", async () => {
     const journey = await seedJourney();
     await seedRooms([
       { name: "Olive Grove", maxCapacity: null },
       { name: "Upper Room", maxCapacity: null },
     ]);
     await joinParticipant({
-      displayName: "First coordinator",
+      displayName: "First leader",
       prayerRequest: "",
       sessionTokenHash: "first-journey".padStart(64, "0"),
     });
     await joinParticipant({
-      displayName: "Second coordinator",
+      displayName: "Second leader",
       prayerRequest: "",
       sessionTokenHash: "second-journey".padStart(64, "0"),
     });
     await joinParticipant({
-      displayName: "Third coordinator",
+      displayName: "Third leader",
       prayerRequest: "",
       sessionTokenHash: "third-journey".padStart(64, "0"),
     });
@@ -253,10 +275,12 @@ describe("gathering lifecycle", () => {
       advanceRoomJourney({
         sessionTokenHash: tokenHash,
         expectedState: "gathering",
+        expectedRevision: gathering.revision,
       }),
       advanceRoomJourney({
         sessionTokenHash: tokenHash,
         expectedState: "gathering",
+        expectedRevision: gathering.revision,
       }),
     ]);
     const active = await getParticipantSnapshot(tokenHash);
@@ -279,7 +303,7 @@ describe("gathering lifecycle", () => {
       active.state === "ROOM"
         ? active.room.members.map(({ name }) => name)
         : [],
-    ).toEqual(["First coordinator", "Second coordinator"]);
+    ).toEqual(["First leader", "Second leader"]);
 
     const otherJourney = await getDatabase().journey.create({
       data: {
@@ -310,8 +334,9 @@ describe("gathering lifecycle", () => {
       advanceRoomJourney({
         sessionTokenHash: "second-journey".padStart(64, "0"),
         expectedState: firstModuleId,
+        expectedRevision: active.revision,
       }),
-    ).rejects.toMatchObject({ code: "COORDINATOR_REQUIRED" });
+    ).rejects.toMatchObject({ code: "LEADER_REQUIRED" });
     await joinParticipant({
       displayName: "Late participant",
       prayerRequest: "",
@@ -326,7 +351,11 @@ describe("gathering lifecycle", () => {
         module: { startedAt: firstStartedAt },
       },
     });
-    await takeOverCoordinator("second-journey".padStart(64, "0"));
+    const beforeTakeover = await getOrganizerSnapshot();
+    await takeOverLeader({
+      sessionTokenHash: "second-journey".padStart(64, "0"),
+      expectedRevision: beforeTakeover.revision,
+    });
     const afterTakeover = await getParticipantSnapshot(
       "second-journey".padStart(64, "0"),
     );
@@ -336,13 +365,14 @@ describe("gathering lifecycle", () => {
         module: { id: firstModuleId, startedAt: firstStartedAt },
       },
     });
-    const activeCoordinatorToken = "second-journey".padStart(64, "0");
+    const activeLeaderToken = "second-journey".padStart(64, "0");
 
     await advanceRoomJourney({
-      sessionTokenHash: activeCoordinatorToken,
+      sessionTokenHash: activeLeaderToken,
       expectedState: firstModuleId,
+      expectedRevision: afterTakeover.revision,
     });
-    const secondModule = await getParticipantSnapshot(activeCoordinatorToken);
+    const secondModule = await getParticipantSnapshot(activeLeaderToken);
     expect(secondModule).toMatchObject({
       journey: { state: "ACTIVE", module: { title: "Reflection" } },
     });
@@ -351,10 +381,11 @@ describe("gathering lifecycle", () => {
         ? secondModule.journey.module.id
         : "";
     await advanceRoomJourney({
-      sessionTokenHash: activeCoordinatorToken,
+      sessionTokenHash: activeLeaderToken,
       expectedState: secondModuleId,
+      expectedRevision: secondModule.revision,
     });
-    expect(await getParticipantSnapshot(activeCoordinatorToken)).toMatchObject({
+    expect(await getParticipantSnapshot(activeLeaderToken)).toMatchObject({
       journey: { state: "COMPLETED" },
     });
     expect(
@@ -370,7 +401,213 @@ describe("gathering lifecycle", () => {
     expect(await getDatabase().roomJourney.count()).toBe(0);
   });
 
-  it("makes the first late arrival coordinator of an empty room", async () => {
+  it("seeds and synchronizes the production Short Study contribution by contribution", async () => {
+    await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
+    expect(await seedProductionJourney(getDatabase())).toBe("attached");
+    expect(await seedProductionJourney(getDatabase())).toBe("attached");
+    expect(
+      await getDatabase().gathering.findUnique({
+        where: { id: ACTIVE_GATHERING_ID },
+        select: { journeyId: true },
+      }),
+    ).toEqual({ journeyId: PRODUCTION_JOURNEY_ID });
+    expect(
+      await getDatabase().journeyModule.findUnique({
+        where: { id: SHORT_STUDY_MODULE_ID },
+        select: {
+          behaviorKey: true,
+          title: true,
+          recommendedSeconds: true,
+          configuration: true,
+        },
+      }),
+    ).toEqual({
+      behaviorKey: "short-study",
+      title: "Why we pray",
+      recommendedSeconds: 3_600,
+      configuration: SHORT_STUDY_CONFIGURATION,
+    });
+
+    for (const [name, token] of [
+      ["Ana", "short-ana"],
+      ["Ben", "short-ben"],
+      ["Chi", "short-chi"],
+    ] as const) {
+      await joinParticipant({
+        displayName: name,
+        prayerRequest: "",
+        sessionTokenHash: token.padStart(64, "0"),
+      });
+    }
+    await launchGathering();
+
+    let leaderToken = "short-ana".padStart(64, "0");
+    const gathering = await getParticipantSnapshot(leaderToken);
+    expect(gathering).toMatchObject({
+      state: "ROOM",
+      journey: { state: "GATHERING" },
+    });
+    await advanceRoomJourney({
+      sessionTokenHash: leaderToken,
+      expectedState: "gathering",
+      expectedRevision: gathering.revision,
+    });
+
+    const active = await getParticipantSnapshot(leaderToken);
+    expect(active).toMatchObject({
+      journey: {
+        state: "ACTIVE",
+        expectedState: `${SHORT_STUDY_MODULE_ID}:0`,
+        module: {
+          behaviorKey: "short-study",
+          shortStudy: {
+            contribution: { kind: "passage" },
+            viewerRole: "leader",
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(active)).not.toContain("assignments");
+    if (
+      active.state !== "ROOM" ||
+      active.journey?.state !== "ACTIVE" ||
+      active.journey.module.behaviorKey !== "short-study"
+    ) {
+      throw new Error("Expected an active Short Study");
+    }
+    const originalReader = active.journey.module.shortStudy?.reader?.id;
+    expect(originalReader).not.toBe(active.participant.id);
+
+    expect(
+      await reassignShortStudyReader({
+        sessionTokenHash: leaderToken,
+        expectedState: active.journey.expectedState,
+        expectedRevision: active.revision,
+      }),
+    ).toBe("changed");
+    const reassigned = await getParticipantSnapshot(leaderToken);
+    if (
+      reassigned.state !== "ROOM" ||
+      reassigned.journey?.state !== "ACTIVE" ||
+      reassigned.journey.module.behaviorKey !== "short-study"
+    ) {
+      throw new Error("Expected a reassigned Short Study");
+    }
+    expect(reassigned.journey.module.shortStudy?.reader?.id).not.toBe(
+      originalReader,
+    );
+    const newLeaderName = reassigned.journey.module.shortStudy?.reader?.name;
+    const newLeaderToken =
+      newLeaderName === "Ben"
+        ? "short-ben".padStart(64, "0")
+        : "short-chi".padStart(64, "0");
+    await takeOverLeader({
+      sessionTokenHash: newLeaderToken,
+      expectedRevision: reassigned.revision,
+    });
+    const afterStudyTakeover = await getParticipantSnapshot(newLeaderToken);
+    expect(afterStudyTakeover).toMatchObject({
+      journey: {
+        expectedState: reassigned.journey.expectedState,
+        module: {
+          shortStudy: {
+            viewerRole: "leader",
+          },
+        },
+      },
+    });
+    if (
+      afterStudyTakeover.state !== "ROOM" ||
+      afterStudyTakeover.journey?.state !== "ACTIVE" ||
+      afterStudyTakeover.journey.module.behaviorKey !== "short-study"
+    ) {
+      throw new Error("Expected the takeover to preserve the Short Study");
+    }
+    expect(afterStudyTakeover.journey.module.shortStudy?.reader?.id).not.toBe(
+      afterStudyTakeover.participant.id,
+    );
+    leaderToken = newLeaderToken;
+
+    await advanceRoomJourney({
+      sessionTokenHash: leaderToken,
+      expectedState: active.journey.expectedState,
+      expectedRevision: active.revision,
+    });
+    expect(await getParticipantSnapshot(leaderToken)).toMatchObject({
+      journey: { expectedState: `${SHORT_STUDY_MODULE_ID}:0` },
+    });
+
+    let current: Awaited<ReturnType<typeof getParticipantSnapshot>> =
+      afterStudyTakeover;
+    for (let index = 1; index <= 5; index += 1) {
+      await advanceRoomJourney({
+        sessionTokenHash: leaderToken,
+        expectedState:
+          current.state === "ROOM" && current.journey?.state === "ACTIVE"
+            ? current.journey.expectedState
+            : "",
+        expectedRevision: current.revision,
+      });
+      current = await getParticipantSnapshot(leaderToken);
+      if (index < 5) {
+        expect(current).toMatchObject({
+          journey: { expectedState: `${SHORT_STUDY_MODULE_ID}:${index}` },
+        });
+      }
+    }
+    expect(current).toMatchObject({ journey: { state: "COMPLETED" } });
+  });
+
+  it("preserves running journeys while activating the production seed when safe", async () => {
+    const otherJourney = await seedJourney();
+    await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
+    await joinParticipant({
+      displayName: "Ana",
+      prayerRequest: "",
+      sessionTokenHash: "seed-other".padStart(64, "0"),
+    });
+
+    expect(await seedProductionJourney(getDatabase())).toBe(
+      "preserved-existing",
+    );
+    expect(
+      await getDatabase().gathering.findUnique({
+        where: { id: ACTIVE_GATHERING_ID },
+        select: { journeyId: true },
+      }),
+    ).toEqual({ journeyId: otherJourney.id });
+
+    await launchGathering();
+
+    expect(await seedProductionJourney(getDatabase())).toBe(
+      "preserved-existing",
+    );
+    expect(
+      await getDatabase().gathering.findUnique({
+        where: { id: ACTIVE_GATHERING_ID },
+        select: { journeyId: true },
+      }),
+    ).toEqual({ journeyId: otherJourney.id });
+
+    await clearGathering();
+    await seedRooms([{ name: "Olive Grove", maxCapacity: null }]);
+    await joinParticipant({
+      displayName: "Ben",
+      prayerRequest: "",
+      sessionTokenHash: "seed-missing".padStart(64, "0"),
+    });
+    await launchGathering();
+
+    expect(await seedProductionJourney(getDatabase())).toBe("attached");
+    expect(
+      await getDatabase().roomJourney.findFirst({
+        where: { journeyId: PRODUCTION_JOURNEY_ID },
+        select: { currentModuleId: true },
+      }),
+    ).toEqual({ currentModuleId: null });
+  });
+
+  it("makes the first late arrival leader of an empty room", async () => {
     await seedRooms([
       {
         name: "Olive Grove",
@@ -390,20 +627,20 @@ describe("gathering lifecycle", () => {
     });
     await launchGathering();
     await joinParticipant({
-      displayName: "Late Coordinator",
+      displayName: "Late Leader",
       prayerRequest: "",
-      sessionTokenHash: "late-coordinator".padStart(64, "0"),
+      sessionTokenHash: "late-leader".padStart(64, "0"),
     });
 
     const snapshot = await getParticipantSnapshot(
-      "late-coordinator".padStart(64, "0"),
+      "late-leader".padStart(64, "0"),
     );
     expect(snapshot.state).toBe("ROOM");
     expect(snapshot.state === "ROOM" && snapshot.room.name).toBe("Upper Room");
     expect(
       snapshot.state === "ROOM" &&
         snapshot.room.members.find(({ id }) => id === snapshot.participant.id)
-          ?.isCoordinator,
+          ?.isLeader,
     ).toBe(true);
   });
 
@@ -427,7 +664,7 @@ describe("gathering lifecycle", () => {
     });
     await getDatabase().room.updateMany({
       where: { gatheringId: ACTIVE_GATHERING_ID },
-      data: { coordinatorId: null },
+      data: { leaderId: null },
     });
     await joinParticipant({
       displayName: "Post-rollout Participant",
@@ -437,7 +674,7 @@ describe("gathering lifecycle", () => {
 
     await launchGathering();
 
-    expect((await getOrganizerSnapshot()).rooms[0]?.coordinatorName).toBe(
+    expect((await getOrganizerSnapshot()).rooms[0]?.leaderName).toBe(
       "First Participant",
     );
   });
