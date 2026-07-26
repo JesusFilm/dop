@@ -221,9 +221,22 @@ export async function getParticipantSnapshot(
             serverTime: new Date().toISOString(),
           },
         };
-      } catch {
+      } catch (error) {
+        console.error("Journey module could not be presented", {
+          behaviorKey: runtime.currentModule.behaviorKey,
+          moduleId: runtime.currentModule.id,
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : "Unknown error",
+        });
         journey = undefined;
       }
+    } else {
+      console.error("Journey runtime has no matching current module", {
+        currentModuleId: runtime.currentModuleId,
+        roomId: participant.room.id,
+      });
     }
   }
 

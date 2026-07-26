@@ -59,7 +59,8 @@ export function AdminSettings() {
         </p>
         <ActionButton
           tone="danger"
-          className="mt-6 w-auto"
+          fullWidth={false}
+          className="mt-6"
           onClick={() => {
             setError("");
             setSuccess("");

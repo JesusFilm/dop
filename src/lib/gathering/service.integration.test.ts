@@ -275,6 +275,11 @@ describe("gathering lifecycle", () => {
       active.state === "ROOM" && active.journey?.state === "ACTIVE"
         ? active.journey.module.startedAt
         : "";
+    expect(
+      active.state === "ROOM"
+        ? active.room.members.map(({ name }) => name)
+        : [],
+    ).toEqual(["First coordinator", "Second coordinator"]);
 
     const otherJourney = await getDatabase().journey.create({
       data: {
@@ -299,7 +304,7 @@ describe("gathering lifecycle", () => {
         where: { roomId: activeRoom.id },
         data: { currentModuleId: otherJourney.modules[0]!.id },
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "P2003" });
 
     await expect(
       advanceRoomJourney({
