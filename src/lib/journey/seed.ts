@@ -1,10 +1,21 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { ACTIVE_GATHERING_ID } from "@/lib/gathering/constants";
+import {
+  KNOWING_GOD_MODULE_ID,
+  MINISTRY_PRAYER_MODULE_ID,
+  PERSONAL_PRAYER_MODULE_ID,
+  PRODUCTION_JOURNEY_ID,
+  SHORT_STUDY_MODULE_ID,
+} from "@/lib/journey/constants";
+import { JULY_MINISTRY_PRAYER_CONFIGURATION } from "@/lib/journey/ministry-prayer-seed";
 
-export const PRODUCTION_JOURNEY_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a001";
-export const SHORT_STUDY_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a002";
-export const KNOWING_GOD_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a003";
-export const PERSONAL_PRAYER_MODULE_ID = "2b27f04e-0cf2-4bf4-b3d6-2ddc08f6a004";
+export {
+  KNOWING_GOD_MODULE_ID,
+  MINISTRY_PRAYER_MODULE_ID,
+  PERSONAL_PRAYER_MODULE_ID,
+  PRODUCTION_JOURNEY_ID,
+  SHORT_STUDY_MODULE_ID,
+};
 
 export const KNOWING_GOD_CONFIGURATION = {
   passageReference: "Ephesians 1:15–23",
@@ -74,6 +85,43 @@ export async function seedProductionJourney(
     });
 
     if (!runningCanonicalJourney) {
+      const knowingGodModule = {
+        id: KNOWING_GOD_MODULE_ID,
+        journeyId: PRODUCTION_JOURNEY_ID,
+        position: 0,
+        behaviorKey: "short-study",
+        title: "Knowing God",
+        recommendedSeconds: 600,
+        configuration: KNOWING_GOD_CONFIGURATION,
+      } as const;
+      const whyWePrayModule = {
+        id: SHORT_STUDY_MODULE_ID,
+        journeyId: PRODUCTION_JOURNEY_ID,
+        position: 1,
+        behaviorKey: "short-study",
+        title: "Why we pray",
+        recommendedSeconds: 600,
+        configuration: SHORT_STUDY_CONFIGURATION,
+      } as const;
+      const ministryPrayerModule = {
+        id: MINISTRY_PRAYER_MODULE_ID,
+        journeyId: PRODUCTION_JOURNEY_ID,
+        position: 2,
+        behaviorKey: "ministry-prayer",
+        title: "Pray for our ministries",
+        recommendedSeconds: 2_400,
+        configuration: JULY_MINISTRY_PRAYER_CONFIGURATION,
+      } as const;
+      const personalPrayerModule = {
+        id: PERSONAL_PRAYER_MODULE_ID,
+        journeyId: PRODUCTION_JOURNEY_ID,
+        position: 3,
+        behaviorKey: "personal-prayer",
+        title: "Personal prayer",
+        recommendedSeconds: 600,
+        configuration: {},
+      } as const;
+
       const lastModule = await transaction.journeyModule.findFirst({
         where: { journeyId: PRODUCTION_JOURNEY_ID },
         orderBy: { position: "desc" },
@@ -83,6 +131,7 @@ export async function seedProductionJourney(
       for (const [offset, id] of [
         KNOWING_GOD_MODULE_ID,
         SHORT_STUDY_MODULE_ID,
+        MINISTRY_PRAYER_MODULE_ID,
         PERSONAL_PRAYER_MODULE_ID,
       ].entries()) {
         await transaction.journeyModule.updateMany({
@@ -93,63 +142,23 @@ export async function seedProductionJourney(
 
       await transaction.journeyModule.upsert({
         where: { id: KNOWING_GOD_MODULE_ID },
-        create: {
-          id: KNOWING_GOD_MODULE_ID,
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 0,
-          behaviorKey: "short-study",
-          title: "Knowing God",
-          recommendedSeconds: 600,
-          configuration: KNOWING_GOD_CONFIGURATION,
-        },
-        update: {
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 0,
-          behaviorKey: "short-study",
-          title: "Knowing God",
-          recommendedSeconds: 600,
-          configuration: KNOWING_GOD_CONFIGURATION,
-        },
+        create: knowingGodModule,
+        update: knowingGodModule,
       });
       await transaction.journeyModule.upsert({
         where: { id: SHORT_STUDY_MODULE_ID },
-        create: {
-          id: SHORT_STUDY_MODULE_ID,
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 1,
-          behaviorKey: "short-study",
-          title: "Why we pray",
-          recommendedSeconds: 600,
-          configuration: SHORT_STUDY_CONFIGURATION,
-        },
-        update: {
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 1,
-          behaviorKey: "short-study",
-          title: "Why we pray",
-          recommendedSeconds: 600,
-          configuration: SHORT_STUDY_CONFIGURATION,
-        },
+        create: whyWePrayModule,
+        update: whyWePrayModule,
+      });
+      await transaction.journeyModule.upsert({
+        where: { id: MINISTRY_PRAYER_MODULE_ID },
+        create: ministryPrayerModule,
+        update: ministryPrayerModule,
       });
       await transaction.journeyModule.upsert({
         where: { id: PERSONAL_PRAYER_MODULE_ID },
-        create: {
-          id: PERSONAL_PRAYER_MODULE_ID,
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 2,
-          behaviorKey: "personal-prayer",
-          title: "Personal prayer",
-          recommendedSeconds: 600,
-          configuration: {},
-        },
-        update: {
-          journeyId: PRODUCTION_JOURNEY_ID,
-          position: 2,
-          behaviorKey: "personal-prayer",
-          title: "Personal prayer",
-          recommendedSeconds: 600,
-          configuration: {},
-        },
+        create: personalPrayerModule,
+        update: personalPrayerModule,
       });
     }
 

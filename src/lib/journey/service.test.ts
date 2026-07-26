@@ -10,11 +10,12 @@ function databaseWithModules(
     behaviorKey?: string;
     configuration?: unknown;
   }[],
+  journeyId = "00000000-0000-0000-0000-000000000001",
 ) {
   return {
     journey: {
       findUnique: vi.fn().mockResolvedValue({
-        id: "00000000-0000-0000-0000-000000000001",
+        id: journeyId,
         name: "Test journey",
         modules: modules.map((module, index) => ({
           id: module.id ?? `00000000-0000-0000-0000-00000000000${index + 2}`,
@@ -36,6 +37,7 @@ describe("journey validation", () => {
   it.each([
     { name: "two-study 20-minute", durations: [600, 600], available: true },
     { name: "19-minute", durations: [19 * 60], available: false },
+    { name: "60-minute", durations: [60 * 60], available: true },
     { name: "90-minute", durations: [90 * 60], available: true },
     { name: "91-minute", durations: [91 * 60], available: false },
   ])(

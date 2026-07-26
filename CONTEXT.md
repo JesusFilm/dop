@@ -35,6 +35,9 @@ Use these terms in code, tests, issues, and product copy.
   instances shared by every room.
 - **Module instance** — one placement of application-defined behavior in a
   journey, with its own title, configuration, order, and recommended duration.
+- **Ministry prayer bundle** — one coherent subset of exact seeded ministry
+  wording. Each room receives five bundles and two fairly rotated people per
+  bundle; the Leader controls synchronized forward progress.
 - **Room journey** — a room's persistent gathering, current-module, timer, or
   completed state. Only its leader can move it forward.
 - **Reset** — clears participants, requests, assignments, leaders, and

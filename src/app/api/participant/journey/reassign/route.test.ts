@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  reassignShortStudyReader: vi.fn(),
+  reassignJourneyParticipant: vi.fn(),
   getParticipantSnapshot: vi.fn(),
   cookies: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/gathering/service", () => ({
-  reassignShortStudyReader: mocks.reassignShortStudyReader,
+  reassignJourneyParticipant: mocks.reassignJourneyParticipant,
   getParticipantSnapshot: mocks.getParticipantSnapshot,
 }));
 
@@ -32,7 +32,7 @@ describe("participant Short Study reassign route", () => {
     mocks.cookies.mockResolvedValue({
       get: () => ({ value: "participant-token" }),
     });
-    mocks.reassignShortStudyReader.mockResolvedValue("changed");
+    mocks.reassignJourneyParticipant.mockResolvedValue("changed");
     mocks.getParticipantSnapshot.mockResolvedValue({
       state: "ROOM",
       revision: 3,
@@ -45,7 +45,7 @@ describe("participant Short Study reassign route", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.reassignShortStudyReader).toHaveBeenCalledWith({
+    expect(mocks.reassignJourneyParticipant).toHaveBeenCalledWith({
       sessionTokenHash:
         "434e05169b4e0bd6d360ab48a271760ac415bb9cdbfbef5bc82ded1cecd428c5",
       expectedState: "module-1:0",
@@ -55,7 +55,7 @@ describe("participant Short Study reassign route", () => {
   });
 
   it("returns a fresh snapshot with a stale result after a revision mismatch", async () => {
-    mocks.reassignShortStudyReader.mockResolvedValue("stale");
+    mocks.reassignJourneyParticipant.mockResolvedValue("stale");
     mocks.getParticipantSnapshot.mockResolvedValue({
       state: "ROOM",
       revision: 4,
@@ -87,6 +87,20 @@ describe("participant Short Study reassign route", () => {
         )
       ).status,
     ).toBe(403);
-    expect(mocks.reassignShortStudyReader).not.toHaveBeenCalled();
+    expect(mocks.reassignJourneyParticipant).not.toHaveBeenCalled();
+  });
+
+  it("passes a selected ministry prayer assignee to the lifecycle", async () => {
+    await POST(
+      request({
+        expectedState: "ministry-module:2",
+        expectedRevision: 7,
+        targetParticipantId: "participant-2",
+      }),
+    );
+
+    expect(mocks.reassignJourneyParticipant).toHaveBeenCalledWith(
+      expect.objectContaining({ targetParticipantId: "participant-2" }),
+    );
   });
 });

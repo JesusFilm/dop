@@ -2,11 +2,16 @@ import type {
   ShortStudyConfiguration,
   ShortStudyContribution,
 } from "@/lib/journey/short-study";
+import type {
+  MinistryPrayerBundle,
+  MinistryPrayerConfiguration,
+} from "@/lib/journey/ministry-prayer";
 import type { PersonalPrayerConfiguration } from "@/lib/journey/personal-prayer";
 
 export type JourneyModulePayloads = {
   "test-guided-prayer": { prompt: string };
   "short-study": ShortStudyConfiguration;
+  "ministry-prayer": MinistryPrayerConfiguration;
   "personal-prayer": PersonalPrayerConfiguration;
 };
 
@@ -47,6 +52,17 @@ export type ShortStudyPresentation = {
   canReassign: boolean;
 };
 
+export type MinistryPrayerPresentation = {
+  bundle: MinistryPrayerBundle;
+  bundleNumber: number;
+  bundleCount: number;
+  assignees: { id: string; name: string }[];
+  viewerRole: "leader" | "assigned" | "member";
+  canReassign: boolean;
+  bundleStartedAt: string;
+  bundleRecommendedSeconds: number;
+};
+
 export type PersonalPrayerPresentation = {
   phase: "grouping" | "revealed";
   members: {
@@ -62,6 +78,11 @@ export type PresentedJourneyModule =
       behaviorKey: "short-study";
       configuration: { translation: string };
       shortStudy: ShortStudyPresentation;
+    }
+  | {
+      behaviorKey: "ministry-prayer";
+      configuration: { bundlesPerRoom: number };
+      ministryPrayer: MinistryPrayerPresentation;
     }
   | {
       behaviorKey: "personal-prayer";

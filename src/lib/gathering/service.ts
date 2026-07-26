@@ -23,18 +23,20 @@ import {
   parseShortStudyState,
   reassignCurrentReader,
   reconcileShortStudyLeader,
-  type ShortStudyConfiguration,
 } from "@/lib/journey/short-study";
+import {
+  createMinistryPrayerState,
+  parseMinistryPrayerState,
+  reassignMinistryPrayerParticipant,
+} from "@/lib/journey/ministry-prayer";
 import {
   addParticipantToPersonalPrayerState,
   createPersonalPrayerState,
   parsePersonalPrayerState,
   revealPersonalPrayerState,
 } from "@/lib/journey/personal-prayer";
-import type {
-  PersonalPrayerPresentation,
-  ShortStudyPresentation,
-} from "@/lib/journey/types";
+import { presentJourneyModule } from "@/lib/journey/presentation";
+import type { PersonalPrayerPresentation } from "@/lib/journey/types";
 
 type Transaction = Prisma.TransactionClient;
 
@@ -136,52 +138,6 @@ function assertValidRoomConfiguration(
   }
 }
 
-function buildShortStudyPresentation(input: {
-  configuration: ShortStudyConfiguration;
-  moduleState: Prisma.JsonValue | null;
-  room: {
-    leaderId: string | null;
-    participants: { id: string; displayName: string }[];
-  };
-  viewerId: string;
-}): ShortStudyPresentation {
-  const state = parseShortStudyState(input.moduleState, input.configuration);
-  if (!state) throw new Error("Invalid Short Study state");
-
-  const contributions = buildShortStudyContributions(input.configuration);
-  const contribution = contributions[state.contributionIndex];
-  if (!contribution) throw new Error("Invalid Short Study contribution");
-
-  const readerId =
-    contribution.kind === "discussion"
-      ? input.room.leaderId
-      : state.assignments[state.contributionIndex];
-  const readerMember = input.room.participants.find(
-    ({ id }) => id === readerId,
-  );
-  const viewerIsLeader = input.viewerId === input.room.leaderId;
-
-  return {
-    contribution,
-    contributionNumber: state.contributionIndex + 1,
-    contributionCount: contributions.length,
-    reader: readerMember
-      ? { id: readerMember.id, name: readerMember.displayName }
-      : null,
-    viewerRole: viewerIsLeader
-      ? "leader"
-      : readerId === input.viewerId
-        ? "reader"
-        : "member",
-    canReassign:
-      viewerIsLeader &&
-      contribution.kind !== "discussion" &&
-      input.room.participants.some(
-        ({ id }) => id !== input.room.leaderId && id !== readerId,
-      ),
-  };
-}
-
 async function buildPersonalPrayerPresentation(input: {
   database: PrismaClient;
   moduleState: Prisma.JsonValue | null;
@@ -245,7 +201,6 @@ async function buildPersonalPrayerPresentation(input: {
     }),
   };
 }
-
 export async function getParticipantSnapshot(
   sessionTokenHash?: string,
 ): Promise<ParticipantSnapshot> {
@@ -334,59 +289,55 @@ export async function getParticipantSnapshot(
         joinedInProgress,
       };
     } else if (runtime.currentModule) {
+      const room = participant.room;
       try {
         const clientModule = validateJourneyModule(
           runtime.currentModule.behaviorKey,
           runtime.currentModule.configuration,
         );
-        const shortStudy =
-          clientModule.behaviorKey === "short-study"
-            ? buildShortStudyPresentation({
-                configuration: clientModule.configuration,
-                moduleState: runtime.moduleState,
-                room: participant.room,
-                viewerId: participant.id,
-              })
-            : undefined;
-        const personalPrayer =
+        const presentation =
           clientModule.behaviorKey === "personal-prayer"
-            ? await buildPersonalPrayerPresentation({
-                database,
-                moduleState: runtime.moduleState,
-                room: participant.room,
-                viewerId: participant.id,
-              })
-            : undefined;
-        const presentedModule =
-          clientModule.behaviorKey === "short-study"
-            ? {
-                behaviorKey: "short-study" as const,
-                configuration: {
-                  translation: clientModule.configuration.translation,
+            ? await (async () => {
+                const personalPrayer = await buildPersonalPrayerPresentation({
+                  database,
+                  moduleState: runtime.moduleState,
+                  room,
+                  viewerId: participant.id,
+                });
+                return {
+                  stateIndex: personalPrayer.phase,
+                  module: {
+                    behaviorKey: "personal-prayer" as const,
+                    configuration: clientModule.configuration,
+                    personalPrayer,
+                  },
+                };
+              })()
+            : presentJourneyModule({
+                module: {
+                  id: runtime.currentModule.id,
+                  position: 0,
+                  title: runtime.currentModule.title,
+                  recommendedSeconds: runtime.currentModule.recommendedSeconds,
+                  ...clientModule,
                 },
-                shortStudy: shortStudy!,
-              }
-            : clientModule.behaviorKey === "personal-prayer"
-              ? {
-                  behaviorKey: "personal-prayer" as const,
-                  configuration: clientModule.configuration,
-                  personalPrayer: personalPrayer!,
-                }
-              : clientModule;
+                moduleState: runtime.moduleState,
+                room,
+                viewerId: participant.id,
+              });
         journey = {
           state: "ACTIVE",
           journeyName: runtime.journey.name,
-          expectedState: shortStudy
-            ? `${runtime.currentModule.id}:${shortStudy.contributionNumber - 1}`
-            : personalPrayer
-              ? `${runtime.currentModule.id}:${personalPrayer.phase}`
-              : runtime.currentModule.id,
+          expectedState:
+            presentation.stateIndex === undefined
+              ? runtime.currentModule.id
+              : `${runtime.currentModule.id}:${presentation.stateIndex}`,
           joinedInProgress,
           module: {
             id: runtime.currentModule.id,
             title: runtime.currentModule.title,
             recommendedSeconds: runtime.currentModule.recommendedSeconds,
-            ...presentedModule,
+            ...presentation.module,
             startedAt: runtime.moduleStartedAt.toISOString(),
             serverTime: new Date().toISOString(),
           },
@@ -753,6 +704,13 @@ export async function advanceRoomJourney(input: {
       currentModule?.behaviorKey === "short-study"
         ? parseShortStudyState(runtime.moduleState, currentModule.configuration)
         : undefined;
+    const currentMinistryPrayerState =
+      currentModule?.behaviorKey === "ministry-prayer"
+        ? parseMinistryPrayerState(
+            runtime.moduleState,
+            currentModule.configuration,
+          )
+        : undefined;
     const currentPersonalPrayerState =
       currentModule?.behaviorKey === "personal-prayer"
         ? parsePersonalPrayerState(runtime.moduleState)
@@ -760,6 +718,16 @@ export async function advanceRoomJourney(input: {
     if (
       currentModule?.behaviorKey === "short-study" &&
       !currentShortStudyState
+    ) {
+      throw new GatheringError(
+        "The room journey state is invalid.",
+        "JOURNEY_STATE_INVALID",
+        409,
+      );
+    }
+    if (
+      currentModule?.behaviorKey === "ministry-prayer" &&
+      !currentMinistryPrayerState
     ) {
       throw new GatheringError(
         "The room journey state is invalid.",
@@ -781,10 +749,13 @@ export async function advanceRoomJourney(input: {
       ? "completed"
       : currentModule?.behaviorKey === "short-study" && currentShortStudyState
         ? `${currentModule.id}:${currentShortStudyState.contributionIndex}`
-        : currentModule?.behaviorKey === "personal-prayer" &&
-            currentPersonalPrayerState
-          ? `${currentModule.id}:${currentPersonalPrayerState.phase}`
-          : (runtime.currentModuleId ?? "gathering");
+        : currentModule?.behaviorKey === "ministry-prayer" &&
+            currentMinistryPrayerState
+          ? `${currentModule.id}:${currentMinistryPrayerState.bundleIndex}`
+          : currentModule?.behaviorKey === "personal-prayer" &&
+              currentPersonalPrayerState
+            ? `${currentModule.id}:${currentPersonalPrayerState.phase}`
+            : (runtime.currentModuleId ?? "gathering");
     if (input.expectedState !== currentState) return;
     if (runtime.completedAt) return;
 
@@ -813,6 +784,28 @@ export async function advanceRoomJourney(input: {
       }
     }
     if (
+      currentModule?.behaviorKey === "ministry-prayer" &&
+      currentMinistryPrayerState &&
+      currentMinistryPrayerState.bundleIndex <
+        currentMinistryPrayerState.bundleIds.length - 1
+    ) {
+      await transaction.roomJourney.update({
+        where: { id: runtime.id },
+        data: {
+          moduleState: {
+            ...currentMinistryPrayerState,
+            bundleIndex: currentMinistryPrayerState.bundleIndex + 1,
+            bundleStartedAt: new Date().toISOString(),
+          },
+        },
+      });
+      await transaction.gathering.update({
+        where: { id: ACTIVE_GATHERING_ID },
+        data: { revision: { increment: 1 } },
+      });
+      return;
+    }
+    if (
       currentModule?.behaviorKey === "personal-prayer" &&
       currentPersonalPrayerState?.phase === "grouping"
     ) {
@@ -834,6 +827,7 @@ export async function advanceRoomJourney(input: {
     const now = new Date();
     const roomParticipants =
       nextModule?.behaviorKey === "short-study" ||
+      nextModule?.behaviorKey === "ministry-prayer" ||
       nextModule?.behaviorKey === "personal-prayer"
         ? await transaction.participant.findMany({
             where: { roomId: participant.roomId },
@@ -841,16 +835,36 @@ export async function advanceRoomJourney(input: {
             select: { id: true },
           })
         : [];
-    const nextModuleState =
-      nextModule?.behaviorKey === "short-study"
-        ? createShortStudyState(
-            nextModule.configuration,
-            roomParticipants,
-            participant.id,
-          )
-        : nextModule?.behaviorKey === "personal-prayer"
-          ? createPersonalPrayerState(roomParticipants)
-          : null;
+    let nextModuleState: Prisma.InputJsonValue | null = null;
+    if (nextModule?.behaviorKey === "short-study") {
+      nextModuleState = createShortStudyState(
+        nextModule.configuration,
+        roomParticipants,
+        participant.id,
+      );
+    } else if (nextModule?.behaviorKey === "ministry-prayer") {
+      const runtimes = await transaction.roomJourney.findMany({
+        where: { journeyId: runtime.journeyId },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      const roomIndex = runtimes.findIndex(({ id }) => id === runtime.id);
+      if (roomIndex < 0) {
+        throw new GatheringError(
+          "The room journey state is invalid.",
+          "JOURNEY_STATE_INVALID",
+          409,
+        );
+      }
+      nextModuleState = createMinistryPrayerState(
+        nextModule.configuration,
+        roomIndex,
+        roomParticipants,
+        now,
+      );
+    } else if (nextModule?.behaviorKey === "personal-prayer") {
+      nextModuleState = createPersonalPrayerState(roomParticipants);
+    }
     await transaction.roomJourney.update({
       where: { id: runtime.id },
       data: nextModule
@@ -877,6 +891,15 @@ export async function reassignShortStudyReader(input: {
   sessionTokenHash: string;
   expectedState: string;
   expectedRevision: number;
+}): Promise<"changed" | "stale" | "unavailable"> {
+  return reassignJourneyParticipant(input);
+}
+
+export async function reassignJourneyParticipant(input: {
+  sessionTokenHash: string;
+  expectedState: string;
+  expectedRevision: number;
+  targetParticipantId?: string;
 }): Promise<"changed" | "stale" | "unavailable"> {
   return serializedTransaction(async (transaction) => {
     const participant = await transaction.participant.findFirst({
@@ -927,7 +950,11 @@ export async function reassignShortStudyReader(input: {
     }
     const runtime = participant.room.journeyRuntime;
     const currentModule = runtime?.currentModule;
-    if (!runtime || currentModule?.behaviorKey !== "short-study") {
+    if (
+      !runtime ||
+      !currentModule ||
+      !["short-study", "ministry-prayer"].includes(currentModule.behaviorKey)
+    ) {
       throw new GatheringError(
         "This activity does not support reader reassignment.",
         "JOURNEY_STATE_INVALID",
@@ -938,28 +965,51 @@ export async function reassignShortStudyReader(input: {
       currentModule.behaviorKey,
       currentModule.configuration,
     );
-    if (clientModule.behaviorKey !== "short-study") {
+    if (
+      clientModule.behaviorKey !== "short-study" &&
+      clientModule.behaviorKey !== "ministry-prayer"
+    ) {
       throw new GatheringError(
-        "This activity does not support reader reassignment.",
+        "This activity does not support participant reassignment.",
         "JOURNEY_STATE_INVALID",
         409,
       );
     }
-    const state = parseShortStudyState(
-      runtime.moduleState,
-      clientModule.configuration,
-    );
-    if (
-      !state ||
-      input.expectedState !== `${currentModule.id}:${state.contributionIndex}`
-    ) {
-      return "stale";
+    let result:
+      | ReturnType<typeof reassignCurrentReader>
+      | ReturnType<typeof reassignMinistryPrayerParticipant>
+      | null;
+    if (clientModule.behaviorKey === "short-study") {
+      const state = parseShortStudyState(
+        runtime.moduleState,
+        clientModule.configuration,
+      );
+      result =
+        state &&
+        input.expectedState === `${currentModule.id}:${state.contributionIndex}`
+          ? reassignCurrentReader(
+              state,
+              participant.room.participants,
+              participant.id,
+            )
+          : null;
+    } else {
+      const state = parseMinistryPrayerState(
+        runtime.moduleState,
+        clientModule.configuration,
+      );
+      result =
+        state &&
+        input.targetParticipantId &&
+        input.expectedState === `${currentModule.id}:${state.bundleIndex}`
+          ? reassignMinistryPrayerParticipant(
+              state,
+              participant.room.participants,
+              input.targetParticipantId,
+            )
+          : null;
     }
-    const result = reassignCurrentReader(
-      state,
-      participant.room.participants,
-      participant.id,
-    );
+    if (!result) return "stale";
     if (!result.changed) return "unavailable";
 
     await transaction.roomJourney.update({

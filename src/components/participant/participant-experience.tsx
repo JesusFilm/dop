@@ -128,6 +128,7 @@ export function ParticipantExperience({
 
   async function reassignReader(
     expectedState: string,
+    targetParticipantId?: string,
   ): Promise<"changed" | "stale" | "unavailable" | "error"> {
     setJourneyPending(true);
     setJourneyError("");
@@ -138,6 +139,7 @@ export function ParticipantExperience({
         body: JSON.stringify({
           expectedState,
           expectedRevision: snapshot.revision,
+          ...(targetParticipantId ? { targetParticipantId } : {}),
         }),
       });
       const result = (await response.json()) as {
@@ -202,6 +204,11 @@ export function ParticipantExperience({
                   }
                   serverTime={snapshot.journey.module.serverTime}
                   compact
+                  label={
+                    snapshot.journey.module.behaviorKey === "ministry-prayer"
+                      ? "Overall:"
+                      : undefined
+                  }
                 />
               ) : null
             }
@@ -210,7 +217,12 @@ export function ParticipantExperience({
             snapshot={snapshot}
             journey={snapshot.journey}
             onAdvance={() => advanceJourney(snapshot.journey!.expectedState)}
-            onReassign={() => reassignReader(snapshot.journey!.expectedState)}
+            onReassign={(targetParticipantId) =>
+              reassignReader(
+                snapshot.journey!.expectedState,
+                targetParticipantId,
+              )
+            }
             onTakeover={takeOver}
             isPending={isJourneyPending}
             error={journeyError}
