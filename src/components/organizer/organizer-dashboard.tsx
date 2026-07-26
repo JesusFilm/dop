@@ -1,95 +1,72 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ArrowRight,
-  BadgeCheck,
-  DoorOpen,
-  Radio,
-  RotateCcw,
-  Users,
-} from "lucide-react";
-import { BrandMark } from "@/components/brand-mark";
+import { ArrowRight, BadgeCheck, DoorOpen, Star } from "lucide-react";
+import { AdminShell } from "@/components/organizer/admin-shell";
+import { updateOrganizer } from "@/components/organizer/update-organizer";
 import { ActionButton } from "@/components/ui/action-button";
 import { Modal } from "@/components/ui/modal";
-import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import type {
   OrganizerRoomSnapshot,
   OrganizerSnapshot,
 } from "@/lib/gathering/types";
 import { useLiveSnapshot } from "@/lib/use-live-snapshot";
 
-type Confirmation = { kind: "launch" } | { kind: "reset" };
-
-async function mutate<T>(endpoint: string, body?: unknown): Promise<T> {
-  const response = await fetchWithTimeout(endpoint, {
-    method: "POST",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const result = (await response.json()) as T & { error?: string };
-  if (!response.ok) {
-    throw new Error(result.error ?? "The gathering could not be updated.");
-  }
-  return result;
-}
-
 function RoomCard({
   room,
-  revealed,
+  totalParticipants,
 }: {
   room: OrganizerRoomSnapshot;
-  revealed: boolean;
+  totalParticipants: number;
 }) {
-  const summary = (
-    <div className="flex min-w-0 flex-1 items-center gap-4">
-      <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary-faint text-primary">
-        <DoorOpen aria-hidden="true" className="size-5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <h3 className="truncate text-lg font-semibold text-ink">{room.name}</h3>
-        <p className="mt-0.5 text-sm text-ink-muted">
-          {room.memberCount} {room.memberCount === 1 ? "member" : "members"}
-          {" · "}
-          {room.maxCapacity === null
-            ? "Unlimited"
-            : `Maximum ${room.maxCapacity}`}
-        </p>
-      </div>
-    </div>
-  );
-
   return (
-    <details className="rounded-3xl bg-surface-muted p-4 sm:p-5">
-      <summary className="flex cursor-pointer list-none items-center gap-3">
-        {summary}
-        <BadgeCheck
-          aria-hidden="true"
-          className="size-5 shrink-0 text-primary"
-        />
-      </summary>
-      <div className="mt-5 border-t border-outline/50 pt-4">
-        <p className="text-sm text-ink-muted">
-          Coordinator:{" "}
-          <strong className="text-ink">
-            {revealed
-              ? (room.coordinatorName ?? "Not assigned")
-              : "Shown at reveal"}
-          </strong>
-        </p>
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {room.members.map((member) => (
-            <li
-              key={member.id}
-              className="rounded-full bg-white px-3 py-2 text-sm text-ink"
-            >
-              {member.name}
-              {revealed && member.isCoordinator ? " · coordinator" : ""}
-            </li>
-          ))}
-        </ul>
+    <article className="flex flex-col rounded-3xl border border-outline/35 bg-white p-5 shadow-card">
+      <header className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary-faint text-primary">
+          <DoorOpen aria-hidden="true" className="size-5" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold text-ink">
+            {room.name}
+          </h2>
+          <p className="mt-0.5 text-sm text-ink-muted">
+            {room.maxCapacity === null
+              ? `${room.memberCount} of ${totalParticipants}`
+              : `${room.memberCount} of ${room.maxCapacity}`}
+            {room.directions ? ` · ${room.directions}` : ""}
+          </p>
+          {room.journeyState !== "unavailable" ? (
+            <p className="mt-1 text-xs font-semibold capitalize text-primary">
+              Journey: {room.journeyState}
+            </p>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="mt-5 border-t border-outline/40 pt-4">
+        {room.members.length === 0 ? (
+          <p className="text-sm text-ink-muted">No one has joined yet.</p>
+        ) : (
+          <ul className="grid grid-cols-2 gap-1.5">
+            {room.members.map((member) => (
+              <li
+                key={member.id}
+                className="flex items-center gap-2 rounded-xl bg-surface-subtle px-3 py-2 text-sm font-medium text-ink"
+              >
+                <span className="min-w-0 flex-1 truncate">{member.name}</span>
+                {member.isCoordinator ? (
+                  <Star
+                    role="img"
+                    aria-label="Coordinator"
+                    className="size-4 shrink-0 fill-primary text-primary"
+                  />
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-    </details>
+    </article>
   );
 }
 
@@ -102,200 +79,133 @@ export function OrganizerDashboard({
     initialSnapshot,
     "/api/organizer",
   );
-  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [isConfirmingLaunch, setConfirmingLaunch] = useState(false);
   const [error, setError] = useState("");
   const [isPending, setPending] = useState(false);
+  const roomsInUse = snapshot.rooms.filter(
+    ({ memberCount }) => memberCount > 0,
+  ).length;
+  const roomsAtCapacity = snapshot.rooms.filter(
+    ({ maxCapacity, memberCount }) =>
+      maxCapacity !== null && memberCount >= maxCapacity,
+  ).length;
 
-  async function run(endpoint: string, body?: unknown) {
+  function closeConfirmation() {
+    setError("");
+    setConfirmingLaunch(false);
+  }
+
+  async function confirmLaunch() {
     setPending(true);
     setError("");
     try {
-      const next = await mutate<OrganizerSnapshot>(endpoint, body);
-      setSnapshot(next);
-      return next;
+      setSnapshot(await updateOrganizer("/api/organizer/launch"));
+      closeConfirmation();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Update failed.");
-      throw caught;
     } finally {
       setPending(false);
     }
   }
 
-  function openConfirmation(next: Confirmation) {
-    setError("");
-    setConfirmation(next);
-  }
-
-  function closeConfirmation() {
-    setError("");
-    setConfirmation(null);
-  }
-
-  async function confirmAction() {
-    if (!confirmation) return;
-    try {
-      if (confirmation.kind === "launch") {
-        await run("/api/organizer/launch");
-      } else {
-        await run("/api/organizer/reset");
-      }
-      closeConfirmation();
-    } catch {}
-  }
-
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[18rem_1fr]">
-      <aside className="border-b border-outline/40 bg-surface-subtle px-5 py-5 lg:fixed lg:inset-y-0 lg:w-72 lg:border-b-0 lg:border-r lg:px-7 lg:py-8">
-        <BrandMark />
-        <p className="mt-3 hidden text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted lg:block">
-          Organizer portal
-        </p>
-        <span className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-semibold text-primary shadow-card lg:w-full lg:justify-center lg:rounded-2xl lg:py-4">
-          <Radio aria-hidden="true" className="size-4" />
-          {isDisconnected
-            ? "Reconnecting"
-            : snapshot.phase === "FORMING"
-              ? "Waiting for reveal"
-              : "Rooms revealed"}
-        </span>
-      </aside>
-
-      <main className="px-5 py-8 sm:px-8 lg:col-start-2 lg:px-12 lg:py-10 xl:px-16">
-        <header className="mx-auto flex max-w-7xl flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-              Day of Prayer
+    <AdminShell active="dashboard">
+      <header className="flex flex-wrap items-start justify-between gap-6">
+        <div>
+          <h1 className="font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+            Dashboard
+          </h1>
+          {isDisconnected ? (
+            <p className="mt-2 text-sm font-medium text-danger">
+              Reconnecting to live updates…
             </p>
-            <h1 className="mt-2 font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
-              Room handoff
-            </h1>
-          </div>
-          <ActionButton
-            tone="secondary"
-            className="w-auto"
-            onClick={() => openConfirmation({ kind: "reset" })}
-            disabled={isPending}
-          >
-            <RotateCcw aria-hidden="true" className="size-4" /> Reset gathering
-          </ActionButton>
-        </header>
-
-        {error ? (
-          <p
-            role="alert"
-            className="mx-auto mt-6 max-w-7xl rounded-2xl bg-red-50 px-5 py-4 text-sm font-medium text-danger"
-          >
-            {error}
-          </p>
-        ) : null}
-
-        <div className="mx-auto mt-10 grid max-w-7xl gap-8 xl:grid-cols-[minmax(20rem,0.9fr)_minmax(30rem,1.3fr)]">
-          <section aria-labelledby="rooms-heading">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                  Physical spaces
-                </p>
-                <h2
-                  id="rooms-heading"
-                  className="mt-2 font-serif text-3xl font-bold text-ink"
-                >
-                  Rooms
-                </h2>
-              </div>
-              <span className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white">
-                {snapshot.rooms.length} total
-              </span>
-            </div>
-            <div className="mt-6 flex flex-col gap-3">
-              {snapshot.rooms.length === 0 ? (
-                <p className="rounded-3xl border border-dashed border-outline p-6 text-center text-ink-muted">
-                  Room seed configuration is missing. Seed at least one
-                  unlimited room before participants join.
-                </p>
-              ) : null}
-              {snapshot.rooms.map((room) => (
-                <RoomCard
-                  key={room.id}
-                  room={room}
-                  revealed={snapshot.phase === "ASSIGNED"}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className="relative overflow-hidden rounded-[2.5rem] bg-white p-7 shadow-ambient sm:p-10">
-            <div
-              aria-hidden="true"
-              className="absolute -right-20 -top-24 size-80 rounded-full bg-primary-faint blur-3xl"
-            />
-            <div className="relative">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                <Radio aria-hidden="true" className="size-4" /> Live status
-              </p>
-              <div className="mt-7 flex items-end gap-4">
-                <strong className="font-serif text-7xl font-semibold leading-none text-ink sm:text-8xl">
-                  {snapshot.participantCount}
-                </strong>
-                <p className="pb-2 text-lg text-ink-muted">
-                  {snapshot.participantCount === 1
-                    ? "participant joined"
-                    : "participants joined"}
-                </p>
-              </div>
-
-              {snapshot.phase === "ASSIGNED" ? (
-                <div className="mt-9 flex items-center gap-4 rounded-3xl bg-primary-faint p-5 text-primary">
-                  <BadgeCheck aria-hidden="true" className="size-8 shrink-0" />
-                  <div>
-                    <h2 className="text-lg font-semibold">
-                      Room assignments revealed
-                    </h2>
-                    <p className="mt-1 text-sm">
-                      Expand a room to see its roster and coordinator.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-10">
-                  <ActionButton
-                    disabled={isPending || !snapshot.capacitySufficient}
-                    className="min-h-16 text-base"
-                    onClick={() => openConfirmation({ kind: "launch" })}
-                  >
-                    Reveal room assignments{" "}
-                    <ArrowRight aria-hidden="true" className="size-5" />
-                  </ActionButton>
-                  <p className="mx-auto mt-5 max-w-xl text-center text-sm leading-6 text-ink-muted">
-                    {snapshot.capacitySufficient
-                      ? `${snapshot.participantCount} hidden ${snapshot.participantCount === 1 ? "assignment is" : "assignments are"} ready to reveal across ${snapshot.rooms.length} ${snapshot.rooms.length === 1 ? "room" : "rooms"}.`
-                      : "The seeded rooms must include at least one unlimited room, and every finite capacity must be at least two."}
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-8 flex items-center gap-3 rounded-2xl bg-surface-muted px-5 py-4 text-ink-muted">
-                <Users aria-hidden="true" className="size-5 text-primary" />
-                Prayer requests are collected privately and never appear here.
-              </div>
-            </div>
-          </section>
+          ) : null}
         </div>
-      </main>
+
+        <div className="ml-auto w-full sm:w-auto">
+          {snapshot.phase === "ASSIGNED" ? (
+            <span className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-primary-faint px-4 text-sm font-semibold text-primary sm:w-auto">
+              <BadgeCheck aria-hidden="true" className="size-5" />
+              Assignments revealed
+            </span>
+          ) : (
+            <ActionButton
+              size="compact"
+              fullWidth={false}
+              className="w-full sm:w-auto"
+              disabled={isPending || !snapshot.capacitySufficient}
+              onClick={() => {
+                setError("");
+                setConfirmingLaunch(true);
+              }}
+            >
+              Reveal assignments
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </ActionButton>
+          )}
+        </div>
+      </header>
+
+      <section
+        aria-label="Dashboard statistics"
+        className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4"
+      >
+        {[
+          {
+            label: "Participants joined",
+            value: snapshot.participantCount,
+          },
+          {
+            label: "Prayer requests",
+            value: snapshot.prayerRequestCount,
+          },
+          { label: "Rooms in use", value: roomsInUse },
+          { label: "Rooms at capacity", value: roomsAtCapacity },
+        ].map((stat) => (
+          <article
+            key={stat.label}
+            className="rounded-2xl border border-outline/35 bg-white px-4 py-4 shadow-card"
+          >
+            <strong className="font-serif text-3xl font-semibold leading-none text-ink">
+              {stat.value}
+            </strong>
+            <p className="mt-1 text-sm text-ink-muted">{stat.label}</p>
+          </article>
+        ))}
+      </section>
+
+      {!snapshot.capacitySufficient ? (
+        <p className="mt-4 text-right text-sm text-danger">
+          Room configuration needs an unlimited room and valid finite capacities
+          before assignments can be revealed.
+        </p>
+      ) : null}
+
+      {snapshot.rooms.length === 0 ? (
+        <p className="mt-8 rounded-3xl border border-dashed border-outline p-6 text-center text-ink-muted">
+          Room seed configuration is missing. Seed at least one unlimited room
+          before participants join.
+        </p>
+      ) : (
+        <section
+          aria-label="Room assignments"
+          className="mt-8 grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+        >
+          {snapshot.rooms.map((room) => (
+            <RoomCard
+              key={room.id}
+              room={room}
+              totalParticipants={snapshot.participantCount}
+            />
+          ))}
+        </section>
+      )}
 
       <Modal
-        open={confirmation !== null}
+        open={isConfirmingLaunch}
         onClose={closeConfirmation}
-        title={
-          confirmation?.kind === "launch"
-            ? "Reveal room assignments?"
-            : "Reset this gathering?"
-        }
-        description={
-          confirmation?.kind === "launch"
-            ? `This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. Those assignments are final until the gathering is reset.`
-            : "This clears every participant and prayer request, but keeps the seeded rooms."
-        }
+        title="Reveal room assignments?"
+        description={`This will reveal the existing assignments for ${snapshot.participantCount} participants across ${snapshot.rooms.length} rooms. ${snapshot.journey.available ? "Each room will then gather before its coordinator starts the journey." : "The guided journey is unavailable, so only the room handoff will begin."} Those assignments are final until the gathering is reset.`}
       >
         <div className="flex flex-col gap-3">
           {error ? (
@@ -306,16 +216,8 @@ export function OrganizerDashboard({
               {error}
             </p>
           ) : null}
-          <ActionButton
-            tone={confirmation?.kind === "launch" ? "primary" : "danger"}
-            onClick={confirmAction}
-            disabled={isPending}
-          >
-            {isPending
-              ? "Updating…"
-              : confirmation?.kind === "launch"
-                ? "Reveal assignments"
-                : "Reset gathering"}
+          <ActionButton onClick={confirmLaunch} disabled={isPending}>
+            {isPending ? "Updating…" : "Reveal assignments"}
           </ActionButton>
           <ActionButton
             tone="secondary"
@@ -326,6 +228,6 @@ export function OrganizerDashboard({
           </ActionButton>
         </div>
       </Modal>
-    </div>
+    </AdminShell>
   );
 }

@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { JoinForm } from "@/components/participant/join-form";
+import { CompletedState } from "@/components/journey/completed-state";
+import { ModuleShell } from "@/components/journey/module-shell";
 import { LobbyStatus } from "@/components/participant/lobby-status";
 import { ParticipantHeader } from "@/components/participant/participant-header";
 import { RoomAssignment } from "@/components/participant/room-assignment";
@@ -51,6 +54,8 @@ export function ParticipantExperience({
     initialSnapshot,
     "/api/participant",
   );
+  const [isJourneyPending, setJourneyPending] = useState(false);
+  const [journeyError, setJourneyError] = useState("");
 
   async function takeOver() {
     const response = await fetchWithTimeout("/api/participant/coordinator", {
@@ -58,6 +63,34 @@ export function ParticipantExperience({
     });
     if (!response.ok) throw new Error("Coordinator update failed");
     setSnapshot((await response.json()) as ParticipantSnapshot);
+  }
+
+  async function advanceJourney(expectedState: string) {
+    setJourneyPending(true);
+    setJourneyError("");
+    try {
+      const response = await fetchWithTimeout(
+        "/api/participant/journey/advance",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedState }),
+        },
+      );
+      const result = (await response.json()) as ParticipantSnapshot & {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error ?? "The room could not continue.");
+      }
+      setSnapshot(result);
+    } catch (error) {
+      setJourneyError(
+        error instanceof Error ? error.message : "The room could not continue.",
+      );
+    } finally {
+      setJourneyPending(false);
+    }
   }
 
   return (
@@ -80,10 +113,42 @@ export function ParticipantExperience({
             participantCount={snapshot.participantCount}
           />
         </>
+      ) : snapshot.journey?.state === "ACTIVE" ? (
+        <>
+          <ParticipantHeader />
+          <ModuleShell
+            snapshot={snapshot}
+            journey={snapshot.journey}
+            onAdvance={() => advanceJourney(snapshot.journey!.expectedState)}
+            onTakeover={takeOver}
+            isPending={isJourneyPending}
+            error={journeyError}
+          />
+        </>
+      ) : snapshot.journey?.state === "COMPLETED" ? (
+        <>
+          <ParticipantHeader />
+          <CompletedState snapshot={snapshot} />
+        </>
       ) : (
         <>
           <ParticipantHeader />
-          <RoomAssignment snapshot={snapshot} onTakeover={takeOver} />
+          <RoomAssignment
+            snapshot={snapshot}
+            onTakeover={takeOver}
+            onStartJourney={
+              snapshot.journey?.state === "GATHERING"
+                ? () => advanceJourney(snapshot.journey!.expectedState)
+                : undefined
+            }
+            journeyName={
+              snapshot.journey?.state === "GATHERING"
+                ? snapshot.journey.journeyName
+                : undefined
+            }
+            isJourneyPending={isJourneyPending}
+            journeyError={journeyError}
+          />
         </>
       )}
     </>

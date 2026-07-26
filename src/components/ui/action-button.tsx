@@ -5,6 +5,7 @@ type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   tone?: "primary" | "secondary" | "quiet" | "danger";
   fullWidth?: boolean;
+  size?: "default" | "compact";
 };
 
 const tones = {
@@ -16,11 +17,17 @@ const tones = {
   danger: "bg-danger text-white hover:bg-red-800",
 };
 
+const sizes = {
+  default: "min-h-14 px-6",
+  compact: "min-h-11 px-4",
+};
+
 export function ActionButton({
   children,
   className,
   tone = "primary",
   fullWidth = true,
+  size = "default",
   type = "button",
   ...props
 }: ActionButtonProps) {
@@ -28,7 +35,8 @@ export function ActionButton({
     <button
       type={type}
       className={cx(
-        "inline-flex min-h-14 items-center justify-center gap-2 rounded-full px-6 text-sm font-semibold tracking-wide transition disabled:pointer-events-none disabled:opacity-55",
+        "inline-flex items-center justify-center gap-2 rounded-full text-sm font-semibold tracking-wide transition disabled:pointer-events-none disabled:opacity-55",
+        sizes[size],
         tones[tone],
         fullWidth && "w-full",
         className,

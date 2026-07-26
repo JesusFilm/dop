@@ -1,14 +1,16 @@
-# CONTEXT — Day of Prayer room handoff
+# CONTEXT — Day of Prayer room journey
 
 A single live, in-person Day of Prayer gathering for roughly 30–50 people.
 Participants join from one shared link, wait in a lobby, and receive a physical
 room assignment immediately. The organizer sees provisional room rosters while
-participants remain in the lobby; launch reveals those assignments. The
-experience in this release ends once everyone knows their room, group, and
-coordinator.
+participants remain in the lobby; launch reveals those assignments. When a
+valid journey is configured, each room then gathers and its coordinator leads
+the room forward through the same ordered activities at its own pace.
 
-The product contract is
+The room-handoff product contract is
 [`docs/plans/2026-07-25-001-feat-participant-room-handoff-plan.md`](docs/plans/2026-07-25-001-feat-participant-room-handoff-plan.md).
+The journey framework contract is
+[`docs/plans/2026-07-26-001-feat-room-journey-framework-plan.md`](docs/plans/2026-07-26-001-feat-room-journey-framework-plan.md).
 Architectural decisions live in [`docs/adr/`](docs/adr/).
 
 ## Glossary
@@ -24,19 +26,27 @@ Use these terms in code, tests, issues, and product copy.
   least two, and the configuration always includes an unlimited room.
 - **Coordinator** — the first participant assigned to each non-empty room. Any
   member can confirm an immediate takeover after launch.
-- **Launch** — the final transition that reveals existing assignments and
-  coordinator identities. It does not recalculate room membership.
+- **Launch** — reveals existing assignments and coordinator identities without
+  recalculating room membership. A configured journey enters its untimed
+  gathering state; launch does not start a module timer.
+- **Journey** — a reusable, database-configured ordered sequence of module
+  instances shared by every room.
+- **Module instance** — one placement of application-defined behavior in a
+  journey, with its own title, configuration, order, and recommended duration.
+- **Room journey** — a room's persistent gathering, current-module, timer, or
+  completed state. Only its coordinator can move it forward.
 - **Reset** — clears participants, requests, assignments, coordinators, and
-  launch state while preserving room configuration.
+  room-journey progress while preserving room and reusable journey
+  configuration.
 - **Room handoff** — the participant screen showing the room, directions,
-  fellow members, and current coordinator. Guided prayer begins after this
-  release.
+  fellow members, and current coordinator.
 
 ## Privacy boundary
 
-Personal prayer requests are encrypted at rest and retained for a later guided
-room experience. They never appear in participant room-handoff snapshots or the
-organizer projection. Reset deletes them with the participant records.
+Personal prayer requests are encrypted at rest. They never appear in the
+framework's participant journey snapshots or organizer projection; a later
+module will expose only its explicitly filtered request view. Reset deletes
+requests with the participant records.
 
 ## Stack
 

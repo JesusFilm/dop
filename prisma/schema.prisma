@@ -13,14 +13,18 @@ enum GatheringPhase {
 }
 
 model Gathering {
-  id         String          @id
-  phase      GatheringPhase @default(FORMING)
-  revision   Int            @default(0)
-  launchedAt DateTime?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
-  rooms      Room[]
+  id           String         @id
+  phase        GatheringPhase @default(FORMING)
+  revision     Int            @default(0)
+  launchedAt   DateTime?
+  journeyId    String?        @db.Uuid
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  journey      Journey?       @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  rooms        Room[]
   participants Participant[]
+
+  @@index([journeyId])
 }
 
 model Room {
@@ -35,24 +39,71 @@ model Room {
   coordinator    Participant?  @relation("RoomCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
   gathering      Gathering     @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
   participants   Participant[] @relation("RoomParticipants")
+  journeyRuntime RoomJourney?
 
   @@index([gatheringId])
 }
 
+model Journey {
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String          @db.VarChar(100)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  gatherings   Gathering[]
+  modules      JourneyModule[]
+  roomRuntimes RoomJourney[]
+}
+
+model JourneyModule {
+  id                 String        @id @default(uuid()) @db.Uuid
+  journeyId          String        @db.Uuid
+  position           Int
+  behaviorKey        String        @db.VarChar(100)
+  title              String        @db.VarChar(150)
+  recommendedSeconds Int
+  configuration      Json
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  journey            Journey       @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  activeRoomRuntimes RoomJourney[] @relation("CurrentJourneyModule")
+
+  @@unique([journeyId, position])
+  @@unique([id, journeyId])
+  @@index([journeyId])
+}
+
+model RoomJourney {
+  id              String         @id @default(uuid()) @db.Uuid
+  roomId          String         @unique @db.Uuid
+  journeyId       String         @db.Uuid
+  currentModuleId String?        @db.Uuid
+  moduleStartedAt DateTime?
+  completedAt     DateTime?
+  moduleState     Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  room            Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  journey         Journey        @relation(fields: [journeyId], references: [id], onDelete: Restrict)
+  currentModule   JourneyModule? @relation("CurrentJourneyModule", fields: [currentModuleId, journeyId], references: [id, journeyId], onDelete: Restrict)
+
+  @@index([journeyId])
+  @@index([currentModuleId])
+}
+
 model Participant {
-  id                   String    @id @default(uuid()) @db.Uuid
-  gatheringId          String
-  displayName          String    @db.VarChar(100)
-  sessionTokenHash     String    @unique @db.VarChar(64)
-  prayerCiphertext     String?
-  prayerIv             String?   @db.VarChar(24)
-  prayerAuthTag        String?   @db.VarChar(24)
-  roomId               String?   @db.Uuid
-  joinedAt             DateTime  @default(now())
-  assignedAt           DateTime?
-  gathering            Gathering @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
-  room                  Room?     @relation("RoomParticipants", fields: [roomId], references: [id], onDelete: SetNull)
-  coordinatedRoom      Room?      @relation("RoomCoordinator")
+  id               String    @id @default(uuid()) @db.Uuid
+  gatheringId      String
+  displayName      String    @db.VarChar(100)
+  sessionTokenHash String    @unique @db.VarChar(64)
+  prayerCiphertext String?
+  prayerIv         String?   @db.VarChar(24)
+  prayerAuthTag    String?   @db.VarChar(24)
+  roomId           String?   @db.Uuid
+  joinedAt         DateTime  @default(now())
+  assignedAt       DateTime?
+  gathering        Gathering @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  room             Room?     @relation("RoomParticipants", fields: [roomId], references: [id], onDelete: SetNull)
+  coordinatedRoom  Room?     @relation("RoomCoordinator")
 
   @@index([gatheringId])
   @@index([roomId])

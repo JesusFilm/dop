@@ -44,9 +44,17 @@ function MemberRow({ member }: { member: ParticipantMember }) {
 export function RoomAssignment({
   snapshot,
   onTakeover,
+  onStartJourney,
+  journeyName,
+  isJourneyPending = false,
+  journeyError = "",
 }: {
   snapshot: RoomSnapshot;
   onTakeover: () => Promise<void>;
+  onStartJourney?: () => Promise<void>;
+  journeyName?: string;
+  isJourneyPending?: boolean;
+  journeyError?: string;
 }) {
   const [isTakeoverOpen, setTakeoverOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
@@ -128,10 +136,35 @@ export function RoomAssignment({
 
         <div className="mt-10 text-center">
           {viewerIsCoordinator ? (
-            <p className="inline-flex items-center gap-2 rounded-full bg-primary-faint px-5 py-3 text-sm font-semibold text-primary">
-              <BadgeCheck aria-hidden="true" className="size-4" />
-              You’re the room coordinator
-            </p>
+            onStartJourney ? (
+              <div className="rounded-[2rem] bg-white p-6 shadow-card">
+                <p className="flex items-center justify-center gap-2 text-sm font-semibold text-primary">
+                  <BadgeCheck aria-hidden="true" className="size-4" />
+                  You’re the room coordinator
+                </p>
+                <h2 className="mt-3 font-serif text-2xl font-bold text-ink">
+                  Start {journeyName ?? "the journey"} when everyone is ready.
+                </h2>
+                {journeyError ? (
+                  <p role="alert" className="mt-3 text-sm text-danger">
+                    {journeyError}
+                  </p>
+                ) : null}
+                <ActionButton
+                  className="mt-5"
+                  onClick={onStartJourney}
+                  disabled={isJourneyPending}
+                >
+                  {isJourneyPending ? "Starting…" : "Start first activity"}
+                  <ArrowRight aria-hidden="true" className="size-5" />
+                </ActionButton>
+              </div>
+            ) : (
+              <p className="inline-flex items-center gap-2 rounded-full bg-primary-faint px-5 py-3 text-sm font-semibold text-primary">
+                <BadgeCheck aria-hidden="true" className="size-4" />
+                You’re the room coordinator
+              </p>
+            )
           ) : (
             <button
               className="rounded-full px-4 py-3 text-sm font-semibold text-ink-muted underline decoration-outline underline-offset-4 transition hover:text-primary"
