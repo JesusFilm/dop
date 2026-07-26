@@ -7,10 +7,10 @@ import {
   CircleUserRound,
   RefreshCw,
 } from "lucide-react";
-import { Countdown } from "@/components/journey/countdown";
 import { ModuleRenderer } from "@/components/journey/module-renderer";
 import { ActionButton } from "@/components/ui/action-button";
 import { Modal } from "@/components/ui/modal";
+import { cx } from "@/lib/classnames";
 import type { ParticipantSnapshot } from "@/lib/gathering/types";
 
 type RoomSnapshot = Extract<ParticipantSnapshot, { state: "ROOM" }>;
@@ -69,12 +69,14 @@ export function ModuleShell({
 
   return (
     <>
-      <main className="mx-auto w-full max-w-3xl px-5 pb-16 pt-10 sm:px-8">
+      <main
+        className={cx(
+          "mx-auto w-full max-w-3xl px-5 pt-6 sm:px-8 sm:pt-8",
+          viewerIsLeader ? "pb-64" : "pb-16",
+        )}
+      >
         <header>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-            {snapshot.room.name} · {journey.journeyName}
-          </p>
-          <h1 className="mt-3 font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+          <h1 className="font-serif text-4xl font-bold tracking-tight text-ink sm:text-5xl">
             {journey.module.title}
           </h1>
           {journey.joinedInProgress ? (
@@ -86,24 +88,25 @@ export function ModuleShell({
         </header>
 
         <section className="mt-8 rounded-[2rem] bg-white p-6 shadow-ambient sm:p-10">
-          <Countdown
-            startedAt={journey.module.startedAt}
-            recommendedSeconds={journey.module.recommendedSeconds}
-            serverTime={journey.module.serverTime}
-          />
-          <div className="mt-8">
-            <ModuleRenderer module={journey.module} />
-          </div>
+          <ModuleRenderer module={journey.module} />
         </section>
 
-        {error ? (
+        {error && !viewerIsLeader ? (
           <p role="alert" className="mt-5 text-sm font-medium text-danger">
             {error}
           </p>
         ) : null}
-        <div className="mt-8">
-          {viewerIsLeader ? (
-            <>
+        {viewerIsLeader ? (
+          <div className="fixed inset-x-0 bottom-0 z-30 bg-gradient-to-t from-white via-white/95 to-transparent px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-12 sm:px-8">
+            <div className="mx-auto w-full max-w-3xl">
+              {error ? (
+                <p
+                  role="alert"
+                  className="mb-3 text-center text-sm font-medium text-danger"
+                >
+                  {error}
+                </p>
+              ) : null}
               <p className="mb-3 flex items-center justify-center gap-2 text-sm font-semibold text-primary">
                 <BadgeCheck aria-hidden="true" className="size-4" />
                 You control when the room continues
@@ -115,7 +118,7 @@ export function ModuleShell({
               {journey.module.behaviorKey === "short-study" &&
               journey.module.shortStudy.canReassign ? (
                 <ActionButton
-                  className="mt-3"
+                  className="mt-3 bg-white"
                   tone="secondary"
                   onClick={reassignReader}
                   disabled={isPending}
@@ -132,8 +135,10 @@ export function ModuleShell({
                   {reassignMessage}
                 </p>
               ) : null}
-            </>
-          ) : (
+            </div>
+          </div>
+        ) : (
+          <div className="mt-8">
             <ActionButton
               tone="secondary"
               onClick={() => setTakeoverOpen(true)}
@@ -141,8 +146,8 @@ export function ModuleShell({
             >
               Leader unavailable? Take over
             </ActionButton>
-          )}
-        </div>
+          </div>
+        )}
       </main>
 
       <Modal

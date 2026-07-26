@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ModuleShell } from "@/components/journey/module-shell";
 import { ParticipantExperience } from "@/components/participant/participant-experience";
@@ -92,6 +98,33 @@ beforeEach(() => {
 });
 
 describe("ParticipantExperience journey progression", () => {
+  it("shows the active activity timer in place of the shared gathering badge", () => {
+    render(<ParticipantExperience initialSnapshot={activeSnapshot} />);
+
+    const header = screen
+      .getByLabelText("Day of Prayer home")
+      .closest("header");
+    expect(header).not.toBeNull();
+    if (!header) throw new Error("Expected the participant header");
+    expect(header.className).toContain("sticky");
+    expect(within(header).getByRole("timer")).toBeTruthy();
+    expect(screen.getAllByRole("timer")).toHaveLength(1);
+    expect(screen.queryByText("Shared gathering")).toBeNull();
+    expect(screen.queryByText("Boardroom · July prayer journey")).toBeNull();
+  });
+
+  it("restores the shared gathering badge outside an active module", () => {
+    render(<ParticipantExperience initialSnapshot={completedSnapshot} />);
+
+    const header = screen
+      .getByLabelText("Day of Prayer home")
+      .closest("header");
+    expect(header).not.toBeNull();
+    if (!header) throw new Error("Expected the participant header");
+    expect(within(header).getByText("Shared gathering")).toBeTruthy();
+    expect(screen.queryByRole("timer")).toBeNull();
+  });
+
   it("replaces the live snapshot after a successful advance", async () => {
     vi.mocked(fetchWithTimeout).mockResolvedValue(
       response({ ok: true, body: completedSnapshot }),
@@ -205,7 +238,15 @@ describe("ModuleShell leader controls", () => {
       />,
     );
 
-    expect(screen.getByText("Ask Ben to read this aloud.")).toBeTruthy();
+    const instruction = screen.getByText("Ask Ben to read this aloud.");
+    const contributionLabel = screen.getByText("Hebrews 4:14–16");
+    expect(
+      instruction.compareDocumentPosition(contributionLabel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Continue" }).closest(".fixed"),
+    ).not.toBeNull();
     expect(
       screen.getByRole("button", { name: "Reassign current reader" }),
     ).toBeTruthy();

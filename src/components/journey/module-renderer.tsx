@@ -37,6 +37,22 @@ export function ModuleRenderer({ module }: { module: PresentedJourneyModule }) {
       }
       return (
         <article aria-labelledby="current-contribution-heading">
+          <div
+            aria-live="polite"
+            className="mb-7 border-b border-slate-200 pb-5"
+          >
+            {study.viewerRole === "reader" ? (
+              <p className="flex items-center gap-2 text-xl font-semibold text-primary">
+                <BadgeCheck aria-hidden="true" className="size-5" />
+                {readerInstruction}
+              </p>
+            ) : (
+              <p className="text-xl font-semibold leading-7 text-primary">
+                {readerInstruction}
+              </p>
+            )}
+          </div>
+
           <div className="flex items-center justify-between gap-4 text-sm font-semibold text-ink-muted">
             <span className="flex items-center gap-2">
               {isDiscussion ? (
@@ -68,24 +84,6 @@ export function ModuleRenderer({ module }: { module: PresentedJourneyModule }) {
               {module.configuration.translation}
             </p>
           ) : null}
-
-          <div
-            aria-live="polite"
-            className={
-              study.viewerRole === "reader"
-                ? "mt-8 rounded-3xl bg-primary p-5 text-white"
-                : "mt-8 rounded-3xl bg-primary-faint p-5 text-primary"
-            }
-          >
-            {study.viewerRole === "reader" ? (
-              <p className="flex items-center gap-2 font-semibold">
-                <BadgeCheck aria-hidden="true" className="size-5" />
-                {readerInstruction}
-              </p>
-            ) : (
-              <p className="font-semibold">{readerInstruction}</p>
-            )}
-          </div>
         </article>
       );
     }

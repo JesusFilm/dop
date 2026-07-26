@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { JoinForm } from "@/components/participant/join-form";
 import { CompletedState } from "@/components/journey/completed-state";
+import { Countdown } from "@/components/journey/countdown";
 import { ModuleShell } from "@/components/journey/module-shell";
 import { LobbyStatus } from "@/components/participant/lobby-status";
 import { ParticipantHeader } from "@/components/participant/participant-header";
@@ -160,7 +161,16 @@ export function ParticipantExperience({
         </>
       ) : snapshot.journey?.state === "ACTIVE" ? (
         <>
-          <ParticipantHeader />
+          <ParticipantHeader
+            trailing={
+              <Countdown
+                startedAt={snapshot.journey.module.startedAt}
+                recommendedSeconds={snapshot.journey.module.recommendedSeconds}
+                serverTime={snapshot.journey.module.serverTime}
+                compact
+              />
+            }
+          />
           <ModuleShell
             snapshot={snapshot}
             journey={snapshot.journey}
