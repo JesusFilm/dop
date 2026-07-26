@@ -32,6 +32,12 @@ describe("Short Study configuration", () => {
       expect.objectContaining({ id: "reflection-0", kind: "reflection" }),
       expect.objectContaining({ id: "reflection-1", kind: "reflection" }),
       expect.objectContaining({ id: "discussion", kind: "discussion" }),
+      {
+        id: "prayer",
+        kind: "prayer",
+        label: "Pray together",
+        text: "Take time now to pray together as a group.",
+      },
     ]);
   });
 
@@ -75,7 +81,7 @@ describe("Short Study assignment state", () => {
     expect(parseShortStudyState(state, configuration)).toEqual(state);
     expect(
       parseShortStudyState(
-        { contributionIndex: 4, assignments: state.assignments },
+        { contributionIndex: 5, assignments: state.assignments },
         configuration,
       ),
     ).toBeUndefined();

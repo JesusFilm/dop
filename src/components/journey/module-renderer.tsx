@@ -51,17 +51,22 @@ export function ModuleRenderer({
       if (!study) break;
       const isPassage = study.contribution.kind === "passage";
       const isDiscussion = study.contribution.kind === "discussion";
+      const isPrayer = study.contribution.kind === "prayer";
       let readerInstruction: string;
       if (study.viewerRole === "reader") {
         readerInstruction = "You’re reading this aloud";
       } else if (study.viewerRole === "leader") {
-        if (isDiscussion) {
+        if (isPrayer) {
+          readerInstruction = "Lead the room in prayer.";
+        } else if (isDiscussion) {
           readerInstruction = "Lead the room through this question.";
         } else if (study.reader) {
           readerInstruction = `Ask ${study.reader.name} to read this aloud.`;
         } else {
           readerInstruction = "Please read this aloud.";
         }
+      } else if (isPrayer) {
+        readerInstruction = "Pray together as a group.";
       } else if (isDiscussion) {
         readerInstruction = `${study.reader?.name ?? "The leader"} is leading the discussion.`;
       } else if (study.reader) {
@@ -89,7 +94,9 @@ export function ModuleRenderer({
 
           <div className="flex items-center justify-between gap-4 text-sm font-semibold text-ink-muted">
             <span className="flex items-center gap-2">
-              {isDiscussion ? (
+              {isPrayer ? (
+                <UsersRound aria-hidden="true" className="size-4" />
+              ) : isDiscussion ? (
                 <MessageCircle aria-hidden="true" className="size-4" />
               ) : (
                 <BookOpenText aria-hidden="true" className="size-4" />

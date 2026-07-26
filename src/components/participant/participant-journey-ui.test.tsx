@@ -515,6 +515,60 @@ describe("ModuleShell leader controls", () => {
     ).toBeNull();
   });
 
+  it("asks the room to pray together after the Short Study discussion", () => {
+    const prayerStepJourney: ActiveJourney = {
+      ...activeJourney,
+      expectedState: "module-1:5",
+      module: {
+        id: "module-1",
+        title: "Why we pray",
+        behaviorKey: "short-study",
+        configuration: {
+          translation: "Berean Standard Bible (BSB)",
+        },
+        recommendedSeconds: 600,
+        startedAt: "2026-07-26T00:00:00.000Z",
+        serverTime: "2026-07-26T00:01:00.000Z",
+        shortStudy: {
+          contribution: {
+            id: "prayer",
+            kind: "prayer",
+            label: "Pray together",
+            text: "Take time now to pray together as a group.",
+          },
+          contributionNumber: 6,
+          contributionCount: 6,
+          reader: null,
+          viewerRole: "leader",
+          canReassign: false,
+        },
+      },
+    };
+
+    render(
+      <ModuleShell
+        snapshot={activeSnapshot}
+        journey={prayerStepJourney}
+        onAdvance={vi.fn()}
+        onReassign={vi.fn()}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Lead the room in prayer." }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Take time now to pray together as a group."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Reassign current reader" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Finish study" })).toBeTruthy();
+  });
+
   it("shows one ministry bundle and targets either assigned person for replacement", () => {
     const onReassign = vi.fn().mockResolvedValue("changed");
     render(

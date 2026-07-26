@@ -624,7 +624,7 @@ describe("gathering lifecycle", () => {
 
     let current: Awaited<ReturnType<typeof getParticipantSnapshot>> =
       afterStudyTakeover;
-    for (let index = 1; index <= 4; index += 1) {
+    for (let index = 1; index <= 5; index += 1) {
       await advanceRoomJourney({
         sessionTokenHash: leaderToken,
         expectedState:
@@ -670,7 +670,7 @@ describe("gathering lifecycle", () => {
         : "",
     ).not.toBe(overwrittenModuleStartedAt);
 
-    for (let index = 1; index <= 5; index += 1) {
+    for (let index = 1; index <= 6; index += 1) {
       await advanceRoomJourney({
         sessionTokenHash: leaderToken,
         expectedState:
@@ -680,7 +680,7 @@ describe("gathering lifecycle", () => {
         expectedRevision: current.revision,
       });
       current = await getParticipantSnapshot(leaderToken);
-      if (index < 5) {
+      if (index < 6) {
         expect(current).toMatchObject({
           journey: { expectedState: `${SHORT_STUDY_MODULE_ID}:${index}` },
         });

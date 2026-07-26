@@ -39,7 +39,9 @@ function buildShortStudyPresentation(input: {
   const readerId =
     contribution.kind === "discussion"
       ? input.room.leaderId
-      : state.assignments[state.contributionIndex];
+      : contribution.kind === "prayer"
+        ? null
+        : state.assignments[state.contributionIndex];
   const readerMember = input.room.participants.find(
     ({ id }) => id === readerId,
   );
@@ -59,7 +61,7 @@ function buildShortStudyPresentation(input: {
         : "member",
     canReassign:
       viewerIsLeader &&
-      contribution.kind !== "discussion" &&
+      (contribution.kind === "passage" || contribution.kind === "reflection") &&
       input.room.participants.some(
         ({ id }) => id !== input.room.leaderId && id !== readerId,
       ),

@@ -48,6 +48,9 @@ export function ModuleShell({
   const isPersonalPrayerGrouping =
     journey.module.behaviorKey === "personal-prayer" &&
     journey.module.personalPrayer.phase === "grouping";
+  const isShortStudyPrayer =
+    journey.module.behaviorKey === "short-study" &&
+    journey.module.shortStudy.contribution.kind === "prayer";
 
   async function confirmTakeover() {
     setTakeoverPending(true);
@@ -123,7 +126,9 @@ export function ModuleShell({
                     : "Continuing…"
                   : isPersonalPrayerGrouping
                     ? "Reveal prayer requests"
-                    : "Continue"}
+                    : isShortStudyPrayer
+                      ? "Finish study"
+                      : "Continue"}
                 <ArrowRight aria-hidden="true" className="size-5" />
               </ActionButton>
               {journey.module.behaviorKey === "short-study" &&

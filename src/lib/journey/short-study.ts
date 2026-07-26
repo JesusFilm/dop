@@ -10,7 +10,7 @@ export type ShortStudyConfiguration = {
 
 export type ShortStudyContribution = {
   id: string;
-  kind: "passage" | "reflection" | "discussion";
+  kind: "passage" | "reflection" | "discussion" | "prayer";
   label: string;
   text: string;
 };
@@ -85,6 +85,12 @@ export function buildShortStudyContributions(
       label: "Discuss together",
       text: configuration.discussionQuestion,
     },
+    {
+      id: "prayer",
+      kind: "prayer",
+      label: "Pray together",
+      text: "Take time now to pray together as a group.",
+    },
   ];
 }
 
@@ -109,7 +115,7 @@ export function createShortStudyState(
   leaderId: string,
   random: Random = Math.random,
 ): ShortStudyState {
-  const readingCount = buildShortStudyContributions(configuration).length - 1;
+  const readingCount = configuration.reflections.length + 1;
   return {
     contributionIndex: 0,
     assignments: createAssignments(
@@ -129,13 +135,14 @@ export function parseShortStudyState(
       ? (value as Record<string, unknown>)
       : null;
   const contributions = buildShortStudyContributions(configuration);
+  const readingCount = configuration.reflections.length + 1;
   if (
     !candidate ||
     !Number.isInteger(candidate.contributionIndex) ||
     (candidate.contributionIndex as number) < 0 ||
     (candidate.contributionIndex as number) >= contributions.length ||
     !Array.isArray(candidate.assignments) ||
-    candidate.assignments.length !== contributions.length - 1 ||
+    candidate.assignments.length !== readingCount ||
     !candidate.assignments.every(
       (assignment) => assignment === null || typeof assignment === "string",
     )
