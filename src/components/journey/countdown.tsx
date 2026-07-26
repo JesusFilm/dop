@@ -20,17 +20,28 @@ export function Countdown({
   useEffect(() => {
     const serverBaseline = Date.parse(serverTime);
     const monotonicBaseline = performance.now();
-    const update = () =>
-      setCountdown(
-        getJourneyCountdown(
-          startedAt,
-          recommendedSeconds,
-          serverBaseline + performance.now() - monotonicBaseline,
-        ),
+    let interval: number | undefined;
+    let elapsed = false;
+    const update = () => {
+      const next = getJourneyCountdown(
+        startedAt,
+        recommendedSeconds,
+        serverBaseline + performance.now() - monotonicBaseline,
       );
+      elapsed = next.elapsed;
+      setCountdown(next);
+      if (elapsed && interval !== undefined) {
+        window.clearInterval(interval);
+        interval = undefined;
+      }
+    };
     update();
-    const interval = window.setInterval(update, 1_000);
-    return () => window.clearInterval(interval);
+    if (!elapsed) {
+      interval = window.setInterval(update, 1_000);
+    }
+    return () => {
+      if (interval !== undefined) window.clearInterval(interval);
+    };
   }, [recommendedSeconds, serverTime, startedAt]);
 
   return (

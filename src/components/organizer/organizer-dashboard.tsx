@@ -56,6 +56,7 @@ function RoomCard({
                 <span className="min-w-0 flex-1 truncate">{member.name}</span>
                 {member.isCoordinator ? (
                   <Star
+                    role="img"
                     aria-label="Coordinator"
                     className="size-4 shrink-0 fill-primary text-primary"
                   />
@@ -172,15 +173,6 @@ export function OrganizerDashboard({
           </article>
         ))}
       </section>
-
-      {error ? (
-        <p
-          role="alert"
-          className="mt-6 rounded-2xl bg-red-50 px-5 py-4 text-sm font-medium text-danger"
-        >
-          {error}
-        </p>
-      ) : null}
 
       {!snapshot.capacitySufficient ? (
         <p className="mt-4 text-right text-sm text-danger">
