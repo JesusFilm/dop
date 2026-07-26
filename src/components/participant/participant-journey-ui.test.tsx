@@ -238,7 +238,10 @@ describe("ModuleShell leader controls", () => {
       />,
     );
 
-    const instruction = screen.getByText("Ask Ben to read this aloud.");
+    const instruction = screen.getByRole("heading", {
+      level: 2,
+      name: "Ask Ben to read this aloud.",
+    });
     const contributionLabel = screen.getByText("Hebrews 4:14–16");
     expect(
       instruction.compareDocumentPosition(contributionLabel) &
@@ -279,7 +282,12 @@ describe("ModuleShell leader controls", () => {
       />,
     );
 
-    expect(screen.getByText("You’re reading this aloud")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "You’re reading this aloud",
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByText("Let us then approach the throne of grace."),
     ).toBeTruthy();

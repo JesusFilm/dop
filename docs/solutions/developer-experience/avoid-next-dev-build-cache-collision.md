@@ -1,6 +1,6 @@
 ---
 title: Avoid Next.js development and production build cache collisions
-date: 2026-07-27
+date: 2026-07-26
 category: developer-experience
 module: local verification
 problem_type: developer_experience

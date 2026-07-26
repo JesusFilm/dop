@@ -42,14 +42,14 @@ export function ModuleRenderer({ module }: { module: PresentedJourneyModule }) {
             className="mb-7 border-b border-slate-200 pb-5"
           >
             {study.viewerRole === "reader" ? (
-              <p className="flex items-center gap-2 text-xl font-semibold text-primary">
+              <h2 className="flex items-center gap-2 text-xl font-semibold text-primary">
                 <BadgeCheck aria-hidden="true" className="size-5" />
                 {readerInstruction}
-              </p>
+              </h2>
             ) : (
-              <p className="text-xl font-semibold leading-7 text-primary">
+              <h2 className="text-xl font-semibold leading-7 text-primary">
                 {readerInstruction}
-              </p>
+              </h2>
             )}
           </div>
 
