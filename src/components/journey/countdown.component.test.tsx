@@ -11,6 +11,26 @@ afterEach(() => {
 });
 
 describe("Countdown", () => {
+  it("uses compact running and elapsed labels in the participant header", () => {
+    vi.useFakeTimers();
+    let monotonicNow = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => monotonicNow);
+
+    render(
+      <Countdown
+        startedAt="2026-07-26T00:00:00.000Z"
+        recommendedSeconds={2}
+        serverTime="2026-07-26T00:00:01.000Z"
+        compact
+      />,
+    );
+
+    expect(screen.getByRole("timer").textContent).toContain("0:01");
+    monotonicNow = 1_000;
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByRole("timer").textContent).toContain("Time reached");
+  });
+
   it("stops its interval after the recommended time elapses", () => {
     vi.useFakeTimers();
     const clearInterval = vi.spyOn(window, "clearInterval");

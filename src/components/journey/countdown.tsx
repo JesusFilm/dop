@@ -8,10 +8,12 @@ export function Countdown({
   startedAt,
   recommendedSeconds,
   serverTime,
+  compact = false,
 }: {
   startedAt: string;
   recommendedSeconds: number;
   serverTime: string;
+  compact?: boolean;
 }) {
   const [countdown, setCountdown] = useState(() =>
     getJourneyCountdown(startedAt, recommendedSeconds, Date.parse(serverTime)),
@@ -50,12 +52,16 @@ export function Countdown({
       aria-live={countdown.elapsed ? "polite" : "off"}
       className={
         countdown.elapsed
-          ? "inline-flex items-center gap-2 rounded-full bg-amber-50 px-5 py-3 font-semibold text-amber-900"
-          : "inline-flex items-center gap-2 rounded-full bg-primary-faint px-5 py-3 font-semibold text-primary"
+          ? `inline-flex items-center gap-2 rounded-full bg-amber-50 font-semibold text-amber-900 ${
+              compact ? "px-4 py-2 text-sm" : "px-5 py-3"
+            }`
+          : `inline-flex items-center gap-2 rounded-full bg-primary-faint font-semibold text-primary ${
+              compact ? "px-4 py-2 text-sm" : "px-5 py-3"
+            }`
       }
     >
-      <Clock3 aria-hidden="true" className="size-5" />
-      {countdown.label}
+      <Clock3 aria-hidden="true" className={compact ? "size-4" : "size-5"} />
+      {compact && countdown.elapsed ? "Time reached" : countdown.label}
     </div>
   );
 }
