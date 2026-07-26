@@ -100,7 +100,7 @@ export function ParticipantExperience({
 
   async function reassignReader(
     expectedState: string,
-  ): Promise<"changed" | "stale" | "unavailable"> {
+  ): Promise<"changed" | "stale" | "unavailable" | "error"> {
     setJourneyPending(true);
     setJourneyError("");
     try {
@@ -132,7 +132,7 @@ export function ParticipantExperience({
           ? error.message
           : "The reader could not be reassigned.",
       );
-      return "stale";
+      return "error";
     } finally {
       setJourneyPending(false);
     }

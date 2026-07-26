@@ -31,7 +31,7 @@ export function ModuleShell({
   snapshot: RoomSnapshot;
   journey: ActiveJourney;
   onAdvance: () => Promise<void>;
-  onReassign: () => Promise<"changed" | "stale" | "unavailable">;
+  onReassign: () => Promise<"changed" | "stale" | "unavailable" | "error">;
   onTakeover: () => Promise<void>;
   isPending: boolean;
   error: string;
@@ -62,6 +62,8 @@ export function ModuleShell({
     const result = await onReassign();
     if (result === "unavailable") {
       setReassignMessage("No other reader is available.");
+    } else if (result === "stale") {
+      setReassignMessage("The room moved on. Try reassigning again.");
     }
   }
 

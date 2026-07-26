@@ -251,9 +251,9 @@ flowchart TB
 
 ### Scope Boundaries
 
-- The guided room prayer experience begins after this work and is deferred per R23.
+- The guided room prayer experience began after this work and was deferred per R23; synchronized progression was subsequently delivered by the Short Study journey module plan.
 - Presentation and allocation of personal, corporate, and ministry prayer requests inside rooms are deferred.
-- Synchronized prayer stages and leader-only progression controls are deferred.
+- Additional prayer stages beyond the Short Study and their presentation rules remain deferred.
 - Organizer authentication and access control are intentionally outside this release.
 - Participant accounts, cross-device recovery, participant removal, manual room moves, and post-launch assignment correction are outside this release.
 - Multiple simultaneous gatherings, event history, messaging, notifications, analytics, and post-event follow-up are outside this release.

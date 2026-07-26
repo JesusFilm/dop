@@ -12,7 +12,7 @@ execution: code
 
 ## Goal Capsule
 
-Ship a production-ready, database-configured Short Study module that a room leader advances one contribution at a time while every participant sees the current content. Seed a real 60–90 minute journey containing the Hebrews 4:14–16 BSB instance, and replace “leader” with “leader” across the system.
+Ship a production-ready, database-configured Short Study module that a room leader advances one contribution at a time while every participant sees the current content. Seed a real 60–90 minute journey containing the Hebrews 4:14–16 BSB instance, and replace the former “coordinator” term with “leader” across the system.
 
 Authority order: this plan’s session-settled product decisions; `CONTEXT.md`; ADRs 0002 and 0003; existing journey runtime patterns. Stop only for a conflict that makes a settled decision unsafe or impossible. The LFG pipeline owns implementation, review, browser acceptance, PR delivery, green CI, and merge.
 

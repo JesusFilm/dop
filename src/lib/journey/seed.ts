@@ -75,11 +75,7 @@ export async function seedProductionJourney(
       });
     }
 
-    if (
-      gathering.phase === "ASSIGNED" &&
-      gathering.journeyId &&
-      gathering.journeyId !== PRODUCTION_JOURNEY_ID
-    ) {
+    if (gathering.journeyId && gathering.journeyId !== PRODUCTION_JOURNEY_ID) {
       return "preserved-existing";
     }
 

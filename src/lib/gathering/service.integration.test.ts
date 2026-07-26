@@ -566,6 +566,17 @@ describe("gathering lifecycle", () => {
       prayerRequest: "",
       sessionTokenHash: "seed-other".padStart(64, "0"),
     });
+
+    expect(await seedProductionJourney(getDatabase())).toBe(
+      "preserved-existing",
+    );
+    expect(
+      await getDatabase().gathering.findUnique({
+        where: { id: ACTIVE_GATHERING_ID },
+        select: { journeyId: true },
+      }),
+    ).toEqual({ journeyId: otherJourney.id });
+
     await launchGathering();
 
     expect(await seedProductionJourney(getDatabase())).toBe(

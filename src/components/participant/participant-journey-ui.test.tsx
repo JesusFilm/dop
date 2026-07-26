@@ -247,6 +247,56 @@ describe("ModuleShell leader controls", () => {
     ).toBeNull();
   });
 
+  it("asks the leader to retry when reader reassignment is stale", async () => {
+    const shortStudyJourney: ActiveJourney = {
+      ...activeJourney,
+      expectedState: "module-1:0",
+      module: {
+        id: "module-1",
+        title: "Why we pray",
+        behaviorKey: "short-study",
+        configuration: {
+          translation: "Berean Standard Bible (BSB)",
+        },
+        recommendedSeconds: 3_600,
+        startedAt: "2026-07-26T00:00:00.000Z",
+        serverTime: "2026-07-26T00:01:00.000Z",
+        shortStudy: {
+          contribution: {
+            id: "passage",
+            kind: "passage",
+            label: "Hebrews 4:14–16",
+            text: "Let us approach the throne of grace.",
+          },
+          contributionNumber: 1,
+          contributionCount: 3,
+          reader: { id: "participant-2", name: "Ben" },
+          viewerRole: "leader",
+          canReassign: true,
+        },
+      },
+    };
+    render(
+      <ModuleShell
+        snapshot={activeSnapshot}
+        journey={shortStudyJourney}
+        onAdvance={vi.fn()}
+        onReassign={vi.fn().mockResolvedValue("stale")}
+        onTakeover={vi.fn()}
+        isPending={false}
+        error=""
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reassign current reader" }),
+    );
+
+    expect(
+      await screen.findByText("The room moved on. Try reassigning again."),
+    ).toBeTruthy();
+  });
+
   it("confirms takeover and displays rejection feedback", async () => {
     const memberSnapshot = {
       ...activeSnapshot,

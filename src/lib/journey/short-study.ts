@@ -194,11 +194,16 @@ export function reconcileShortStudyLeader(
   const readingCount = state.assignments.length;
   const assignments = [...state.assignments];
   const unfinishedStart = Math.min(state.contributionIndex, readingCount);
+  const replacementIndexes = assignments.flatMap((assignment, index) =>
+    index >= unfinishedStart && assignment === leaderId ? [index] : [],
+  );
   const replacements = createAssignments(
-    readingCount - unfinishedStart,
+    replacementIndexes.length,
     participants.filter(({ id }) => id !== leaderId).map(({ id }) => id),
     random,
   );
-  assignments.splice(unfinishedStart, replacements.length, ...replacements);
+  replacementIndexes.forEach((index, replacementIndex) => {
+    assignments[index] = replacements[replacementIndex] ?? null;
+  });
   return { ...state, assignments };
 }

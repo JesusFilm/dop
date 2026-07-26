@@ -113,7 +113,7 @@ describe("Short Study assignment state", () => {
   it("removes a new leader from unfinished assignments", () => {
     const state = {
       contributionIndex: 1,
-      assignments: ["ben", "chi", "chi"],
+      assignments: ["ben", "chi", "ben"],
     };
     const reconciled = reconcileShortStudyLeader(
       state,
@@ -123,7 +123,8 @@ describe("Short Study assignment state", () => {
     );
 
     expect(reconciled.assignments[0]).toBe("ben");
-    expect(reconciled.assignments.slice(1)).not.toContain("chi");
+    expect(reconciled.assignments[1]).not.toBe("chi");
+    expect(reconciled.assignments[2]).toBe("ben");
     expect(reconciled.contributionIndex).toBe(1);
   });
 });
