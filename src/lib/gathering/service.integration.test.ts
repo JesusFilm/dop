@@ -135,6 +135,7 @@ describe("gathering lifecycle", () => {
     expect(beforeLaunch).toMatchObject({
       phase: "FORMING",
       participantCount: 5,
+      prayerRequestCount: 5,
       capacitySufficient: true,
     });
     expect(beforeLaunch.rooms.map(({ memberCount }) => memberCount)).toEqual([

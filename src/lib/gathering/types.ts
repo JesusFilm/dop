@@ -71,6 +71,7 @@ export type OrganizerSnapshot = {
   phase: GatheringPhase;
   revision: number;
   participantCount: number;
+  prayerRequestCount: number;
   capacitySufficient: boolean;
   journey: {
     available: boolean;

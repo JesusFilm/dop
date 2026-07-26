@@ -248,32 +248,40 @@ export async function getParticipantSnapshot(
 export async function getOrganizerSnapshot(): Promise<OrganizerSnapshot> {
   const database = getDatabase();
   const gathering = await ensureGathering(database);
-  const [participantCount, rooms, validJourney] = await Promise.all([
-    database.participant.count({
-      where: { gatheringId: ACTIVE_GATHERING_ID },
-    }),
-    database.room.findMany({
-      where: { gatheringId: ACTIVE_GATHERING_ID },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      include: {
-        participants: {
-          orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
-          select: { id: true, displayName: true },
+  const [participantCount, prayerRequestCount, rooms, validJourney] =
+    await Promise.all([
+      database.participant.count({
+        where: { gatheringId: ACTIVE_GATHERING_ID },
+      }),
+      database.participant.count({
+        where: {
+          gatheringId: ACTIVE_GATHERING_ID,
+          prayerCiphertext: { not: null },
         },
-        coordinator: { select: { displayName: true } },
-        journeyRuntime: {
-          select: { currentModuleId: true, completedAt: true },
+      }),
+      database.room.findMany({
+        where: { gatheringId: ACTIVE_GATHERING_ID },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        include: {
+          participants: {
+            orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+            select: { id: true, displayName: true },
+          },
+          coordinator: { select: { displayName: true } },
+          journeyRuntime: {
+            select: { currentModuleId: true, completedAt: true },
+          },
         },
-      },
-    }),
-    getValidJourney(database, gathering.journeyId),
-  ]);
+      }),
+      getValidJourney(database, gathering.journeyId),
+    ]);
   const status = capacityStatus(rooms);
 
   return {
     phase: gathering.phase,
     revision: gathering.revision,
     participantCount,
+    prayerRequestCount,
     ...status,
     journey: {
       available: validJourney !== null,
