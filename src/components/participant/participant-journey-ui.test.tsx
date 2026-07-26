@@ -98,7 +98,7 @@ beforeEach(() => {
 });
 
 describe("ParticipantExperience journey progression", () => {
-  it("shows the active activity timer in place of the shared gathering badge", () => {
+  it("shows the active activity timer in the participant header", () => {
     render(<ParticipantExperience initialSnapshot={activeSnapshot} />);
 
     const header = screen
@@ -113,7 +113,7 @@ describe("ParticipantExperience journey progression", () => {
     expect(screen.queryByText("Boardroom · July prayer journey")).toBeNull();
   });
 
-  it("restores the shared gathering badge outside an active module", () => {
+  it("leaves the participant header unbadged outside an active module", () => {
     render(<ParticipantExperience initialSnapshot={completedSnapshot} />);
 
     const header = screen
@@ -121,7 +121,7 @@ describe("ParticipantExperience journey progression", () => {
       .closest("header");
     expect(header).not.toBeNull();
     if (!header) throw new Error("Expected the participant header");
-    expect(within(header).getByText("Shared gathering")).toBeTruthy();
+    expect(within(header).queryByText("Shared gathering")).toBeNull();
     expect(screen.queryByRole("timer")).toBeNull();
   });
 
@@ -129,15 +129,43 @@ describe("ParticipantExperience journey progression", () => {
     vi.mocked(fetchWithTimeout).mockResolvedValue(
       response({ ok: true, body: completedSnapshot }),
     );
-    render(<ParticipantExperience initialSnapshot={activeSnapshot} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const { container } = render(
+      <ParticipantExperience
+        initialSnapshot={activeSnapshot}
+        homeHref="/admin/tester/participant/1"
+        endpoints={{
+          snapshot: "/api/participant?testerSession=1",
+          leader: "/api/participant/leader?testerSession=1",
+          journeyAdvance: "/api/participant/journey/advance?testerSession=1",
+          journeyReassign: "/api/participant/journey/reassign?testerSession=1",
+        }}
+      />,
+    );
 
     expect(
+      screen.getByLabelText("Day of Prayer home").getAttribute("href"),
+    ).toBe("/admin/tester/participant/1");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(fetchWithTimeout).toHaveBeenCalledWith(
+      "/api/participant/journey/advance?testerSession=1",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(
       await screen.findByRole("heading", {
-        name: "Your room has completed the journey.",
+        name: "Thanks for praying, Ana.",
       }),
     ).toBeTruthy();
+    const subheading = screen.getByText("We hope you enjoyed this experience.");
+    const encouragement = screen.getByText(
+      "Go in peace. May the God of hope fill you with all joy and peace as you trust in Him. — Romans 15:13",
+    );
+    expect(subheading.className).toContain("font-semibold");
+    expect(encouragement).toBeTruthy();
+    expect(screen.queryByText("Boardroom")).toBeNull();
+    expect(container.querySelector(".lucide-party-popper")).not.toBeNull();
+    expect(container.querySelector(".lucide-circle-check")).toBeNull();
+    expect(screen.queryByText(/completed state is saved/i)).toBeNull();
   });
 
   it("shows a non-OK response and restores the Continue action", async () => {
@@ -381,10 +409,35 @@ describe("ModuleShell leader controls", () => {
 });
 
 describe("RoomAssignment journey start", () => {
-  it("shows and disables the start action only for the leader", () => {
+  it("uses a celebratory heading with the room and directions beneath it", () => {
+    render(<RoomAssignment snapshot={activeSnapshot} onTakeover={vi.fn()} />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Your group is ready." }),
+    ).toBeTruthy();
+    expect(screen.getByText("Boardroom, upstairs")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Please make your way to Boardroom and wait for the group to gather.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Room name")).toBeNull();
+    expect(screen.queryByText("Gathering")).toBeNull();
+    expect(screen.queryByText("2 members")).toBeNull();
+  });
+
+  it("anchors the start action below the leader label and clears a long member list", () => {
     const onStartJourney = vi.fn();
     const gatheringSnapshot = {
       ...activeSnapshot,
+      room: {
+        ...activeSnapshot.room,
+        members: Array.from({ length: 20 }, (_, index) => ({
+          id: `participant-${index + 1}`,
+          name: `Participant ${index + 1}`,
+          isLeader: index === 0,
+        })),
+      },
       journey: {
         state: "GATHERING" as const,
         journeyName: "July prayer journey",
@@ -397,7 +450,32 @@ describe("RoomAssignment journey start", () => {
         snapshot={gatheringSnapshot}
         onTakeover={vi.fn()}
         onStartJourney={onStartJourney}
-        journeyName="July prayer journey"
+      />,
+    );
+
+    const startButton = screen.getByRole("button", {
+      name: "Start first activity",
+    });
+    const fixedTray = startButton.closest(".fixed");
+    const leaderLabel = screen.getByText("You’re the room leader");
+
+    expect(fixedTray).not.toBeNull();
+    expect(fixedTray?.contains(leaderLabel)).toBe(true);
+    expect(
+      leaderLabel.compareDocumentPosition(startButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole("main").className.split(" ")).toContain("pb-48");
+    expect(screen.getAllByRole("listitem")).toHaveLength(20);
+    expect(
+      screen.queryByText("Start July prayer journey when everyone is ready."),
+    ).toBeNull();
+
+    rerender(
+      <RoomAssignment
+        snapshot={gatheringSnapshot}
+        onTakeover={vi.fn()}
+        onStartJourney={onStartJourney}
         isJourneyPending
       />,
     );
@@ -415,7 +493,6 @@ describe("RoomAssignment journey start", () => {
         }}
         onTakeover={vi.fn()}
         onStartJourney={onStartJourney}
-        journeyName="July prayer journey"
       />,
     );
 
