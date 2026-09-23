@@ -29,7 +29,7 @@
     "@prisma/client": "7.9.0",
     "dotenv": "17.2.3",
     "lucide-react": "^1.26.0",
-    "next": "15.5.21",
+    "next": "15.5.26",
     "pg": "8.13.1",
     "react": "19.0.0",
     "react-dom": "19.0.0"
@@ -43,7 +43,7 @@
     "@types/react": "19.0.7",
     "@types/react-dom": "19.0.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "15.5.21",
+    "eslint-config-next": "15.5.26",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.23",
     "prettier": "3.9.6",
